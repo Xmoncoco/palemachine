@@ -8,7 +8,7 @@ VENV_PATH="$SCRIPT_DIR/palemachine_venv"
 if [ ! -d "$VENV_PATH" ]; then
     python3 -m venv "$VENV_PATH"
     source "$VENV_PATH/bin/activate"
-    pip install django yt-dlp requests
+    pip install django yt-dlp requests python-dotenv
 else
     source "$VENV_PATH/bin/activate"
 fi

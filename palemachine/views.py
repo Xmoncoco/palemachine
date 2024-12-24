@@ -4,12 +4,18 @@ from .Downloader import YTDownloader
 import uuid 
 import os
 import requests 
+import subprocess
 
-basepath = '/Users/milhanhadjadji/dev/django/palemachine/palemachine/'
+server_path = os.path.join(os.path.dirname(__file__), 'downloads')
+
+music_path = os.path.join(os.path.dirname(__file__), 'musics')
+
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
 
+if not os.path.exists(server_path):
+    os.makedirs(server_path)
 def download_form(request):
     return render(request, f'download_form.html')
 
@@ -17,7 +23,7 @@ def instantdl(request):
     url = request.GET.get('yt_url')
     filename = request.GET.get('filename')
     uuid2 = uuid.uuid4()
-    download_path = os.path.join(basepath, str(uuid2))
+    download_path = os.path.join(server_path, str(uuid2))
     os.mkdir(download_path)
     downloader = YTDownloader(download_path, filename, audio_only=True)
     downloader.download(url)
@@ -30,7 +36,7 @@ def manualdl(request):
     img_url = request.GET.get('img_url')
     
     uuid2 = uuid.uuid4()
-    download_path = os.path.join(basepath, str(uuid2))
+    download_path = os.path.join(server_path, str(uuid2))
     os.mkdir(download_path)
     
     # Download the thumbnail image
@@ -42,7 +48,25 @@ def manualdl(request):
     downloader = YTDownloader(download_path, filename, audio_only=True)
     downloader.download(url)
     video_path = os.path.join(download_path, f'{filename}.mp3')
-    print(f'ffmpeg -i {video_path} -i {thumbnail_path} -map 0 -map 1 -c copy -c:v:1 png -disposition:1 attached_pic {os.path.join(download_path,filename)}_thumbnail.mp3')
+    
+    # Use subprocess to run ffmpeg commands
+    output_path = os.path.join(download_path, f'{filename}_thumbnail.mp3')
+    music_output_path = os.path.join(music_path, f'{filename}.mp3')
+    
+    # Ensure the music directory exists
+    if not os.path.exists(music_path):
+        os.makedirs(music_path)
+    
+    try:
+        subprocess.run([
+            'ffmpeg', '-i', video_path, '-i', thumbnail_path, '-map', '0', '-map', '1',
+            '-c', 'copy', '-disposition:1', 'attached_pic', output_path
+        ], check=True)
+        
+        subprocess.run(['cp', output_path, music_output_path], check=True)
+        
+    except subprocess.CalledProcessError as e:
+        return HttpResponse(f"An error occurred: {e}", status=500)
     
     return HttpResponse(f"Download complete. Files are saved in directory: {uuid2}")
     
