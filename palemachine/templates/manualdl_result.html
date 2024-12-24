@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Choose Thumbnail</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* Static blurry background */
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000; /* Default background */
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px);
+            opacity: 0; /* Start invisible */
+            transition: opacity 1s ease-in-out; /* Smooth fade-in effect */
+            z-index: -1;
+        }
+
+        .background.visible {
+            opacity: 1; /* Fade in the background */
+        }
+
+        .thumbnail-container {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            z-index: 1;
+        }
+
+        .thumbnail-container label {
+            cursor: pointer;
+        }
+
+        .thumbnail-container img {
+            display: block;
+            margin: auto;
+            border: 2px solid transparent;
+            transition: border 0.3s ease;
+        }
+
+        .thumbnail-container input[type="radio"]:checked + img {
+            border: 2px solid #007BFF;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="background" id="background"></div>
+
+    <h1>Choose Thumbnail for "{{ title }}"</h1>
+    <form action="{% url 'manualdl' %}" method="get">
+        <input type="hidden" name="yt_url" value="{{ request.GET.yt_url }}">
+        <input type="hidden" name="filename" value="{{ friendlyname }}">
+        
+        <div class="thumbnail-container">
+            {% for image in track_images %}
+                <label>
+                    <input type="radio" name="img_url" value="{{ image }}" required hidden onchange="updateBackground(this)">
+                    <img src="{{ image }}" alt="Thumbnail {{ forloop.counter }}" style="width: 100px; height: 100px;">
+                </label>
+            {% endfor %}
+        </div>
+        
+        <button type="submit">Download</button>
+    </form>
+
+    <script>
+        function updateBackground(input) {
+            const selectedImage = input.value; // Get the selected image URL
+            const background = document.getElementById('background');
+            
+            // Temporarily hide the background to reset the fade
+            background.classList.remove('visible');
+
+            // Change the background image and trigger fade-in
+            setTimeout(() => {
+                background.style.backgroundImage = `url(${selectedImage})`;
+                background.classList.add('visible');
+            }, 300); // Slight delay to ensure smooth transition
+        }
+    </script>
+</body>
+</html>
