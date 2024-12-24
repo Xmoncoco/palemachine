@@ -42,7 +42,7 @@ def manualdl(request):
     downloader = YTDownloader(download_path, filename, audio_only=True)
     downloader.download(url)
     video_path = os.path.join(download_path, f'{filename}.mp3')
-    os.run(f'ffmpeg -i {video_path} -i {thumbnail_path} -map 0 -map 1 -c copy -c:v:1 png -disposition:1 attached_pic {filename}_thumbnail.mp3')
+    print(f'ffmpeg -i {video_path} -i {thumbnail_path} -map 0 -map 1 -c copy -c:v:1 png -disposition:1 attached_pic {os.path.join(download_path,filename)}_thumbnail.mp3')
     
     return HttpResponse(f"Download complete. Files are saved in directory: {uuid2}")
     
@@ -55,6 +55,7 @@ def imgquestion(request):
     video_id = url.split("v=")[-1].split("&")[0]
     youtube_api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
     youtube_response = requests.get(youtube_api_url).json()
+    print(youtube_response)
     title = youtube_response['items'][0]['snippet']['title']
     print(title)
     

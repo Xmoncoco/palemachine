@@ -155,3 +155,6 @@ __pycache__/
 local_settings.py
 db.sqlite3
 media
+
+#venv because is automatically created when started
+palemachine_venv/
