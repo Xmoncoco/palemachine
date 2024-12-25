@@ -16,6 +16,7 @@ SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
 
 if not os.path.exists(server_path):
     os.makedirs(server_path)
+
 def download_form(request):
     return render(request, f'download_form.html')
 
@@ -59,8 +60,7 @@ def manualdl(request):
     
     try:
         subprocess.run([
-            'ffmpeg', '-i', video_path, '-i', thumbnail_path, '-map', '0', '-map', '1',
-            '-c', 'copy', '-disposition:1', 'attached_pic', output_path
+            'ffmpeg', '-i', video_path, '-i', thumbnail_path, '-map_metadata', '0', '-map', '0', '-map', '1', '-acodec', 'copy', output_path
         ], check=True)
         
         subprocess.run(['cp', output_path, music_output_path], check=True)
