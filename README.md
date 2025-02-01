@@ -12,6 +12,7 @@ Firstly, you will need:
 - ffmpeg and python3 in your PATH
 
 > **Note:** Your credentials will be used for showing thumbnails for music.
+
 > **Information:** You can run the project on Windows, but you will need to "translate" the `start.sh` script. However, I can't guarantee it will work 100% as I don't have a Windows computer, so Windows compatibility is not planned.
 
 ### Steps to use:
