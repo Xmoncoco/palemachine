@@ -1,9 +1,6 @@
 # palemachine
 A YouTube downloader for server with a Spotify picture finder.
 
-## Why the name palemachine?
-Because I love the album "palemachine" by bo-en.
-
 ## How to use it?
 
 Firstly, you will need:
@@ -52,6 +49,10 @@ and if nothing work make a issue I'll try to fix it.
 
 ## Contributing
 If you would like to contribute to this project, please fork the repository and submit a pull request. We welcome all contributions!
+
+
+## Why the name palemachine?
+Because I love the album "palemachine" by bo-en.
 
 ## License
 This project is licensed under the MIT License. See the LICENSE file for more details.
