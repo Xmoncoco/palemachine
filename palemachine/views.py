@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from .Downloader import YTDownloader
 import uuid 
 import os
@@ -112,3 +112,28 @@ def imgquestion(request):
             'friendlyname': friendlyname
         }
     )
+
+def spotify_result_json(request):
+    query = request.GET.get('query')
+    
+    auth_response = requests.post(
+        'https://accounts.spotify.com/api/token',
+        data={'grant_type': 'client_credentials'},
+        auth=(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
+    )
+    access_token = auth_response.json().get('access_token')
+    
+    headers = {'Authorization': f'Bearer {access_token}'}
+    spotify_api_url = f"https://api.spotify.com/v1/search?q={query}&type=track"
+    spotify_response = requests.get(spotify_api_url, headers=headers).json()
+    tracks = spotify_response.get('tracks', {}).get('items', [])
+    
+    results = []
+    for track in tracks:
+        track_info = {
+            'name': track['name'],
+            'thumbnail': track['album']['images'][0]['url'] if track.get('album') and track['album'].get('images') else None
+        }
+        results.append(track_info)
+    
+    return JsonResponse(results, safe=False)
