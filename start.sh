@@ -19,6 +19,8 @@ if ! command -v ffmpeg &> /dev/null; then
     exit 1
 fi
 
+pip install --upgrade yt-dlp
+
 # Define the paths relative to the script directory
 DJANGO_PROJECT_PATH="$SCRIPT_DIR"
 
