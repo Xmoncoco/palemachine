@@ -32,7 +32,7 @@ Firstly, you will need:
     ````
 
 4. Ensure ffmpeg is installed and available in your PATH.
-    if you type ffmpeg in your terminal and get a message __"Use -h to get full help or, even better, run 'man ffmpeg'"__ you are good.
+    if you type ```ffmpeg``` in your terminal and get a message __"Use -h to get full help or, even better, run 'man ffmpeg'"__ you are good.
 
 5. now cross your fingers and run ./start.sh :
     ```bash 
