@@ -1,3 +1,5 @@
+>[!warning] this is the rework on rust because the python version is a bit to heavy
+
 # palemachine
 A YouTube downloader for server with a Spotify picture finder.
 
@@ -49,7 +51,6 @@ and if nothing work make a issue I'll try to fix it.
 
 ## Contributing
 If you would like to contribute to this project, please fork the repository and submit a pull request. We welcome all contributions!
-
 
 ## Why the name palemachine?
 Because I love the album "palemachine" by bo-en.
