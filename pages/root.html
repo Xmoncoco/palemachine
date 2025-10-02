@@ -10,6 +10,7 @@
             height: 100%;
             margin: 0;
             padding: 0;
+            overflow-y: auto;
         }
         body {
             min-height: 100vh;
@@ -25,30 +26,19 @@
             border-radius: 18px;
             box-shadow: 0 8px 32px rgba(44, 62, 80, 0.15);
             width: 100%;
-            max-width: 370px;
+            max-width: 600px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             align-items: center;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         h1 {
             text-align: center;
             color: #4f3ca7;
             margin-bottom: 1.5rem;
             font-size: 1.7rem;
-        }
-        form {
-            width: 90%;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
-        }
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #333;
-            font-weight: 500;
         }
         input[type="text"] {
             width: 100%;
@@ -80,21 +70,105 @@
             background: linear-gradient(90deg, #764ba2 0%, #667eea 100%);
             transform: translateY(-2px) scale(1.03);
         }
+        #result {
+            margin-top: 20px;
+            width: 100%;
+            font-size: 0.95rem;
+            color: #333;
+            word-break: break-word;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+            overflow-y: auto;
+            max-height: 70vh;
+        }
+        #result div {
+            text-align: center;
+        }
+        #result img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .dl-btn {
+            margin-top: 10px;
+            padding: 0.6rem 1.2rem;
+            background: #764ba2;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+        .dl-btn:hover {
+            background: #4f3ca7;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Formulaire de téléchargement</h1>
-        <form method="GET" action="/imgquestion/">
-            <label for="yt_url">URL YouTube :</label>
-            <input type="text" name="yt_url" id="yt_url" required>
-            <label for="friendlyname">Name of the music :</label>
-            <input type="text" name="friendlyname" id="friendlyname" required>
-            <button type="submit">Télécharger</button>
+        <form id="ytForm" method="GET" action="/imagequestion">
+            <input type="text" id="yt_url" name="yt_url" placeholder="URL YouTube" required>
+            <input type="text" id="friendlyname" name="friendlyname" placeholder="Nom de la musique" required>
+            <button type="submit">Chercher les images</button>
         </form>
+        <div id="result"></div>
         <p style="margin-top:1.5rem; font-size:0.92rem; color:#888; text-align:center;">
             <strong>Disclaimer :</strong> Ce site est privé. Toute IP qui se connecte au service sera récoltée.
         </p>
     </div>
+
+    <script>
+        const form = document.getElementById("ytForm");
+        const resultDiv = document.getElementById("result");
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const yt_url = document.getElementById("yt_url").value;
+            const friendlyname = document.getElementById("friendlyname").value;
+
+            resultDiv.innerHTML = "Chargement...";
+
+            try {
+                const res = await fetch(`/imagequestion?yt_url=${encodeURIComponent(yt_url)}&friendlyname=${encodeURIComponent(friendlyname)}`);
+                const data = await res.json();
+
+                if (Array.isArray(data) && data.length > 0) {
+                    // Affiche les résultats avec bouton de téléchargement pour chaque image
+                    resultDiv.innerHTML = data.map(item =>
+                        `<div>
+                            <strong>${item.music_name}</strong>
+                            <br>
+                            <img src="${item.uri}" alt="${item.music_name}">
+                            <br>
+                            <button class="dl-btn" onclick="triggerDownload('${yt_url}', '${item.music_name.replace(/'/g,"\\'")}', '${item.uri}')">Télécharger MP3</button>
+                        </div>`
+                    ).join("");
+                } else {
+                    resultDiv.innerHTML = "Aucun résultat trouvé.";
+                }
+            } catch (err) {
+                resultDiv.innerHTML = "Erreur lors de la récupération des données.";
+                console.error(err);
+            }
+        });
+
+        // Fonction pour appeler le endpoint /downlad
+        function triggerDownload(url, name, image) {
+            fetch(`/downlad?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&image=${encodeURIComponent(image)}`)
+                .then(res => res.text())
+                .then(txt => {
+                    alert(txt);
+                })
+                .catch(err => {
+                    alert("Erreur lors du lancement du téléchargement");
+                });
+        }
+    </script>
 </body>
 </html>
