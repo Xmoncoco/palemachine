@@ -21,9 +21,11 @@ for mp3 in "$dir"/*.mp3; do
       "${mp3}.tmp.mp3"
     if [[ $? -eq 0 ]]; then
       mv "${mp3}.tmp.mp3" "$mp3"
+      rm "$jpg"
     else
       echo "❌ Erreur ffmpeg sur $mp3"
       rm -f "${mp3}.tmp.mp3"
+      
     fi
   fi
 done

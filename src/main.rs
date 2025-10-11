@@ -73,9 +73,6 @@ async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> i
 async fn main() -> std::io::Result<()>{
 
     dotenv().ok();
-
-    println!("{:?}", std::env::current_dir());
-    println!("the server has started at 127.0.0.1:8080");
     
     let _db = db_link::init();
     let configfile = fs::read_to_string("config.toml")

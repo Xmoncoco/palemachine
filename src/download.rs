@@ -1,8 +1,8 @@
-use std::{array, fmt::format, fs::{self, File}, path, process::Command, thread};
+use std::{ fs::{self, File}, process::Command};
 use actix_web::http::header;
 use reqwest::Client;
 use chrono::Utc;
-use crate::db_link;
+use crate::{db_link, db_link::add_entry };
 use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose, Engine as _};
 
@@ -28,13 +28,6 @@ pub struct SimpleSpotifyThumbnail{
     uri: String,
 }
 
-#[allow(dead_code)]
-pub fn downloadvideo(url : &String) {
-    let url = url.clone();
-    thread::spawn(move ||{
-        
-    });
-}
 
 pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSpotifyThumbnail> {
     let url = url.clone();
@@ -63,6 +56,7 @@ pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSp
                             timestamp : Utc::now().to_rfc3339(),
                             ip : ip.clone()
                         };
+                        let _ = add_entry(entry);
                         let get_token = async{get_spotify_token().await};
                         let token = get_token.await;
                          return get_thumbnails(&token, &title, &name).await;
@@ -153,6 +147,10 @@ pub async fn get_thumbnails(api_key: &str, title: &str, friendly_name: &str) -> 
                             ) {
                                 if let Some(image_json) = image_list.get(0) {
                                     if let Ok(image_serde) = serde_json::from_value::<SpotifyThumbnail>(image_json.clone()) {
+                                        if cfg!(debug_assertions){
+                                            println!("{}",image_serde.height);
+                                            println!("{}", image_serde.width);
+                                        }
                                         let element = SimpleSpotifyThumbnail {
                                             music_name: name.to_string(),
                                             uri: image_serde.url,
@@ -208,6 +206,10 @@ pub async fn get_spotify_token() -> String {
     };
 
     let token : SpotifyToken=res.json().await.expect("Failed to parse response");
+    if cfg!(debug_assertions){
+        println!("{} {}",token.token_type,token.expires_in)
+    }
+    
     token.access_token
 }
 
@@ -263,7 +265,6 @@ pub async fn send_download(url: &str, name: &str, image: &str) {
 
 fn download_image(url: &str, output_path: &str,name: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("Démarrage du téléchargement depuis : {}", url);
-    println!("{}",output_path);
     let real_path = format!("{}/{}.jpg",output_path,name);
     // 1. Créer un client reqwest bloquant et effectuer la requête GET
     let client = reqwest::blocking::Client::new();
