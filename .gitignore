@@ -2,3 +2,4 @@
 /.env
 /history_of_download.sqlite
 /venv
+/package
