@@ -94,7 +94,7 @@ async fn main() -> std::io::Result<()>{
             .route("/imagequestion", web::get().to(image_question))
             .route("/downlad",web::get().to(download))
     ))
-    .bind(("127.0.0.1",port))?
+    .bind(("0.0.0.0",port))?
     .run()
     .await
 }
