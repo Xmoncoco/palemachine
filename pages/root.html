@@ -163,7 +163,7 @@
             fetch(`/downlad?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&image=${encodeURIComponent(image)}`)
                 .then(res => res.text())
                 .then(txt => {
-                    alert(txt);
+                    alert("téléchargement terminé");
                 })
                 .catch(err => {
                     alert("Erreur lors du lancement du téléchargement");
