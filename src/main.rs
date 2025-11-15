@@ -1,6 +1,7 @@
-use std::fs;
+use std::{fs, process::Command};
 use actix_web::{ web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::Deserialize;
+
 use dotenvy::dotenv;
 use crate::download::send_download;
 
@@ -60,7 +61,7 @@ async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> i
 
         return HttpResponse::Ok()
             .content_type("application/json")
-            .json(result); // ⬅️ vec automatiquement converti en JSON
+            .json(result); 
     }
 
     let html = fs::read_to_string("pages/imageQuestion.html").unwrap_or_else(|_| {
@@ -69,11 +70,37 @@ async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> i
     HttpResponse::Ok().body(html)
 }
 
+fn get_version()-> Result<String, reqwest::Error>{
+    let githubversion = reqwest::blocking::get("https://raw.githubusercontent.com/Xmoncoco/palemachine/refs/heads/master/.version")?;
+    let version = githubversion.text()?;
+    return Ok(version);
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
 
     dotenv().ok();
-    
+    let version = fs::read_to_string(".version")
+        .expect(".version");
+
+    let local_version = version.trim();
+    match get_version() {
+        Ok(github_version) => {
+            let remote_version = github_version.trim();
+
+            if remote_version == local_version {
+                println!("✅ Latest version: {}", local_version);
+            } else {
+                println!("⚠️ New version available: {}", remote_version);
+                let mut update_command = Command::new(r"./update.sh");
+                let _ = update_command.spawn();
+                std::process::exit(01);
+            }
+        },
+        Err(e) => {
+            println!("❌ Unable to get the remote version: {}", e);
+        }
+    }
     let _db = db_link::init();
     let configfile = fs::read_to_string("config.toml")
             .expect("config.toml manquant !");
@@ -88,12 +115,12 @@ async fn main() -> std::io::Result<()>{
     });
     println!("the server has started at 127.0.0.1:{}",port);
     
-    HttpServer::new(||(
+    HttpServer::new(||
         App::new()
             .route("/", web::get().to(root))
             .route("/imagequestion", web::get().to(image_question))
             .route("/downlad",web::get().to(download))
-    ))
+    )
     .bind(("0.0.0.0",port))?
     .run()
     .await
