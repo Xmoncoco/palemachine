@@ -92,9 +92,6 @@ async fn main() -> std::io::Result<()>{
                 println!("✅ Latest version: {}", local_version);
             } else {
                 println!("⚠️ New version available: {}", remote_version);
-                let mut update_command = Command::new(r"./update.sh");
-                let _ = update_command.spawn();
-                std::process::exit(01);
             }
         },
         Err(e) => {

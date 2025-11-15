@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 SCRIPT_DIR = $(dirname " &(readlink -f "$0")") 
 echo("🆙 : NEW VERSION FOUND UPDATING")
 mkdir $SCRIPT_DIR/../tempqddlkmfjqfejie
