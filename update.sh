@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 SCRIPT_DIR = $(dirname " &(readlink -f "$0")") 
-REP_ORIGINE = $(pwd)
 echo("🆙 : NEW VERSION FOUND UPDATING")
 mkdir $SCRIPT_DIR/../tempqddlkmfjqfejie
 cp $SCRIPT_DIR/config.toml $SCRIPT_DIR/../tempqddlkmfjqfejie/config.toml
