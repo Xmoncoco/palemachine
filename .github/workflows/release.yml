@@ -4,7 +4,7 @@ name: Build & Release Palemachine Package
 on:
   push:
     branches:
-      -master
+      - master
 jobs:
   release:
     runs-on: ubuntu-latest
