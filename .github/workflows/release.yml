@@ -1,0 +1,49 @@
+# .github/workflows/release.yml (Version modifiée)
+name: Build & Release Palemachine Package
+
+on:
+  push:
+    tags:
+      - 'v*' # Se déclenche sur un tag de version (ex: v1.0.0)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (Nécessaire pour le build.sh)
+        uses: dtolnay/rust-toolchain@stable
+        
+      - name: Setup Python (Nécessaire pour le venv/pip dans le build.sh)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x' # Utiliser une version de Python 3 compatible
+          
+      - name: Execute Build Script and Create Package
+        # Exécute le script de paquage.
+        # Nous devons être sûr que le script est exécutable.
+        run: |
+          chmod +x ./installation_scripts/build.sh
+          ./installation_scripts/build.sh
+          # Note : Votre script crée le dossier 'package' à la racine du dépôt.
+          
+      - name: Archive the full package
+        # Compresse tout le répertoire 'package' créé par le build.sh
+        # Le nom doit être unique pour la plateforme (ici Linux)
+        run: tar -czvf palemachine-linux-full-package-${{ github.ref_name }}.tar.gz -C package .
+        
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Le chemin d'accès au fichier zippé est maintenant dynamique
+          files: palemachine-linux-full-package-${{ github.ref_name }}.tar.gz
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
