@@ -3,9 +3,8 @@ name: Build & Release Palemachine Package
 
 on:
   push:
-    tags:
-      - 'v*' # Se déclenche sur un tag de version (ex: v1.0.0)
-
+    branches:
+      -master
 jobs:
   release:
     runs-on: ubuntu-latest
