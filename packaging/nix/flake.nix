@@ -12,6 +12,7 @@
         pkgs = import nixpkgs { inherit system; };
         
         manifest = (pkgs.lib.importTOML ../../Cargo.toml).package;
+        pythonEnv = pkgs.python3.withPackages (ps: [ ps.yt-dlp ]);
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
@@ -29,7 +30,8 @@
           buildInputs = [ 
             pkgs.openssl 
             pkgs.sqlite 
-            pkgs.python3
+            pythonEnv
+            pkgs.ffmpeg
           ];
 
           # Disable tests that require network or local DB if necessary
@@ -40,13 +42,13 @@
             cp -r pages $out/share/palemachine/
             cp downloader $out/share/palemachine/
             cp requirement.txt $out/share/palemachine/
-            cp config.toml.example $out/share/palemachine/
             cp .version $out/share/palemachine/
             cp bambam_morigatsu_chuapo.sh $out/share/palemachine/
             cp update.sh $out/share/palemachine/
             
             wrapProgram $out/bin/palemachine \
-              --chdir $out/share/palemachine
+              --chdir $out/share/palemachine \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pythonEnv pkgs.ffmpeg ]}
           '';
 
           meta = with pkgs.lib; {

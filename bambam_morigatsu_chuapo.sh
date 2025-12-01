@@ -13,6 +13,14 @@ for mp3 in "$dir"/*.mp3; do
   [ -e "$mp3" ] || continue  # Si aucun mp3, skip
   base="${mp3%.mp3}"
   jpg="${base}.jpg"
+  
+  use_cover=false
+
+  if [ ! -f "$jpg" ] && [ -f "$dir/cover.jpg" ]; then
+      jpg="$dir/cover.jpg"
+      use_cover=true
+  fi
+
   # Si un jpg du même nom existe
   if [[ -f "$jpg" ]]; then
     echo "Ajout de la miniature $jpg à $mp3"
@@ -21,7 +29,9 @@ for mp3 in "$dir"/*.mp3; do
       "${mp3}.tmp.mp3"
     if [[ $? -eq 0 ]]; then
       mv "${mp3}.tmp.mp3" "$mp3"
-      rm "$jpg"
+      if [ "$use_cover" = false ]; then
+        rm "$jpg"
+      fi
     else
       echo "❌ Erreur ffmpeg sur $mp3"
       rm -f "${mp3}.tmp.mp3"

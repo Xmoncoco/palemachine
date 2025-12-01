@@ -1,5 +1,13 @@
 /target
 /.env
 /history_of_download.sqlite
+/test_history.sqlite
 /venv
 /package
+/__pycache__/
+*.pyc
+/config.toml
+*.swp
+.DS_Store
+.vscode/
+.idea/

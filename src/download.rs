@@ -36,41 +36,73 @@ pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSp
     tokio::spawn(async move {
         println!("c'est url {url}, et le nom {name}");
 
-        if let Some(id) = extract_param(&url, "v") {
-            println!("a new image ask with the youtube ID: {}", id);
+            if let Some(id) = extract_param(&url, "v") {
+                println!("a new image ask with the youtube ID: {}", id);
 
-            if let Ok(youtube_api_key) = std::env::var("YOUTUBE_API_KEY") {
-                
-                let youtube_api_name_query = format!(
-                    "https://www.googleapis.com/youtube/v3/videos?part=snippet&id={}&key={}",
-                    id, youtube_api_key
-                );
-                if let Some(body) = http_get(&youtube_api_name_query).await{
-                    let title = get_title_from_json(&body);
-                    if let Some(title) = title {
-                        let entry: db_link::DbEntry = db_link::DbEntry{
-                            url: url.clone(),
-                            yt_id: id.clone(),
-                            friendly_name : name.clone(),
-                            real_name : title.clone(),
-                            timestamp : Utc::now().to_rfc3339(),
-                            ip : ip.clone()
-                        };
-                        let _ = add_entry(entry);
-                        let get_token = async{get_spotify_token().await};
-                        let token = get_token.await;
-                         return get_thumbnails(&token, &title, &name).await;
+                if let Ok(youtube_api_key) = std::env::var("YOUTUBE_API_KEY") {
+                    
+                    let youtube_api_name_query = format!(
+                        "https://www.googleapis.com/youtube/v3/videos?part=snippet&id={}&key={}",
+                        id, youtube_api_key
+                    );
+                    if let Some(body) = http_get(&youtube_api_name_query).await{
+                        let title = get_title_from_json(&body);
+                        if let Some(title) = title {
+                            let entry: db_link::DbEntry = db_link::DbEntry{
+                                url: url.clone(),
+                                yt_id: id.clone(),
+                                friendly_name : name.clone(),
+                                real_name : title.clone(),
+                                timestamp : Utc::now().to_rfc3339(),
+                                ip : ip.clone()
+                            };
+                            let _ = add_entry(entry);
+                            let get_token = async{get_spotify_token().await};
+                            let token = get_token.await;
+                             return get_thumbnails(&token, &title, &name).await;
 
+                        }
+                    } else {
+                        eprintln!("Failed to fetch video details from YouTube API");
                     }
-                } else {
-                    eprintln!("Failed to fetch video details from YouTube API");
+                }else{
+                    eprintln!("have you set the YOUTUBE_API_KEY env variable?");
                 }
-            }else{
-                eprintln!("have you set the YOUTUBE_API_KEY env variable?");
+            } else if let Some(id) = extract_param(&url, "list") {
+                println!("a new image ask with the playlist ID: {}", id);
+
+                if let Ok(youtube_api_key) = std::env::var("YOUTUBE_API_KEY") {
+                    
+                    let youtube_api_name_query = format!(
+                        "https://www.googleapis.com/youtube/v3/playlists?part=snippet&id={}&key={}",
+                        id, youtube_api_key
+                    );
+                    if let Some(body) = http_get(&youtube_api_name_query).await{
+                        let title = get_title_from_json(&body);
+                        if let Some(title) = title {
+                            let entry: db_link::DbEntry = db_link::DbEntry{
+                                url: url.clone(),
+                                yt_id: id.clone(),
+                                friendly_name : name.clone(),
+                                real_name : title.clone(),
+                                timestamp : Utc::now().to_rfc3339(),
+                                ip : ip.clone()
+                            };
+                            let _ = add_entry(entry);
+                            let get_token = async{get_spotify_token().await};
+                            let token = get_token.await;
+                             return get_thumbnails(&token, &title, &name).await;
+
+                        }
+                    } else {
+                        eprintln!("Failed to fetch playlist details from YouTube API");
+                    }
+                }else{
+                    eprintln!("have you set the YOUTUBE_API_KEY env variable?");
+                }
+            } else {
+                println!("No ID found in the URL");
             }
-        } else {
-            println!("No ID found in the URL");
-        }
         return Vec::<SimpleSpotifyThumbnail>::new();
     }).await.unwrap()
 }
@@ -228,25 +260,22 @@ pub async fn send_download(url: &str, name: &str, image: &str) {
             .get("path")
             .and_then(|v| v.as_str())
             .expect("Champ 'path' manquant ou mal formé dans config.toml");
-        let pythonpath = "./venv/bin/python3";
+        let pythonpath = "python3";
         let script_path = "./downloader"; // Extension .py explicite
 
-        if let Some(id) = extract_param(&url, "v") {
-            let output_file = format!("{}", name);
-            let status = Command::new(pythonpath)
-                .arg(script_path)
-                .arg(id)
-                .arg(&output_file)
-                .arg(path)
-                .status()
-                .expect("Erreur lors du lancement du script Python");
-            if status.success() {
-                println!("✅ Script Python exécuté avec succès !");
-            } else {
-                eprintln!("❌ Échec du script Python (code: {:?})", status.code());
-            }
+        // On passe l'URL complète au script Python pour qu'il gère les playlists
+        let output_file = format!("{}", name);
+        let status = Command::new(pythonpath)
+            .arg(script_path)
+            .arg(&url)
+            .arg(&output_file)
+            .arg(path)
+            .status()
+            .expect("Erreur lors du lancement du script Python");
+        if status.success() {
+            println!("✅ Script Python exécuté avec succès !");
         } else {
-            eprintln!("❌ Impossible d'extraire l'ID YouTube de l'URL fournie : {}", url);
+            eprintln!("❌ Échec du script Python (code: {:?})", status.code());
         }
 
         // Téléchargement de l'image
@@ -265,7 +294,21 @@ pub async fn send_download(url: &str, name: &str, image: &str) {
 
 fn download_image(url: &str, output_path: &str,name: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("Démarrage du téléchargement depuis : {}", url);
-    let real_path = format!("{}/{}.jpg",output_path,name);
+    
+    let playlist_check = format!("{}/{}", output_path, name);
+    let is_playlist = std::path::Path::new(&playlist_check).is_dir();
+    
+    let real_path;
+    let script_target;
+    
+    if is_playlist {
+        real_path = format!("{}/cover.jpg", playlist_check);
+        script_target = playlist_check;
+    } else {
+        real_path = format!("{}/{}.jpg", output_path, name);
+        script_target = output_path.to_string();
+    }
+
     // 1. Créer un client reqwest bloquant et effectuer la requête GET
     let client = reqwest::blocking::Client::new();
     let mut response = client.get(url)
@@ -273,20 +316,60 @@ fn download_image(url: &str, output_path: &str,name: &str) -> Result<(), Box<dyn
         .error_for_status()?; // Vérifie si la réponse HTTP est un succès (2xx)
 
     // 2. Créer le fichier de destination local
-    let mut file = File::create(real_path)?;
+    let mut file = File::create(&real_path)?;
 
     // 3. Copier directement le corps de la réponse dans le fichier
     // La méthode copy_to() transfère efficacement les données chunk par chunk.
     let bytes_written = response.copy_to(&mut file)?;
 
     println!("--------------------------------------------------");
-    println!("✅ Succès : {} octets écrits dans le fichier '{}'.", bytes_written, output_path);
+    println!("✅ Succès : {} octets écrits dans le fichier '{}'.", bytes_written, real_path);
     let status = Command::new(r"./bambam_morigatsu_chuapo.sh")
-        .arg(output_path)
+        .arg(script_target)
         .status()
         .expect("Zzz");
     if status.success(){
         println!("ok")
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_param() {
+        let url_v = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        assert_eq!(extract_param(url_v, "v"), Some("dQw4w9WgXcQ".to_string()));
+
+        let url_list = "https://www.youtube.com/playlist?list=PL123456789";
+        assert_eq!(extract_param(url_list, "list"), Some("PL123456789".to_string()));
+
+        let url_mid = "https://example.com?v=123&other=456";
+        assert_eq!(extract_param(url_mid, "v"), Some("123".to_string()));
+
+        let url_none = "https://example.com";
+        assert_eq!(extract_param(url_none, "v"), None);
+    }
+
+    #[test]
+    fn test_get_title_from_json() {
+        let json = r#"{
+            "items": [
+                {
+                    "snippet": {
+                        "title": "Test Title"
+                    }
+                }
+            ]
+        }"#;
+        assert_eq!(get_title_from_json(json), Some("Test Title".to_string()));
+
+        let empty_items = r#"{ "items": [] }"#;
+        assert_eq!(get_title_from_json(empty_items), None);
+
+        let bad_json = "{";
+        assert_eq!(get_title_from_json(bad_json), None);
+    }
 }

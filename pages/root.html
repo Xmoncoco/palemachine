@@ -1,17 +1,20 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Downloader</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        html, body {
+        html,
+        body {
             height: 100%;
             margin: 0;
             padding: 0;
             overflow-y: auto;
         }
+
         body {
             min-height: 100vh;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -20,6 +23,7 @@
             justify-content: center;
             font-family: 'Montserrat', Arial, sans-serif;
         }
+
         .container {
             background: #fff;
             padding: 2.5rem 1.5rem;
@@ -34,12 +38,14 @@
             max-height: 90vh;
             overflow-y: auto;
         }
+
         h1 {
             text-align: center;
             color: #4f3ca7;
             margin-bottom: 1.5rem;
             font-size: 1.7rem;
         }
+
         input[type="text"] {
             width: 100%;
             padding: 0.7rem;
@@ -49,10 +55,12 @@
             font-size: 1rem;
             transition: border 0.2s;
         }
+
         input[type="text"]:focus {
             border-color: #764ba2;
             outline: none;
         }
+
         button {
             width: 100%;
             padding: 0.8rem;
@@ -66,10 +74,12 @@
             box-shadow: 0 2px 8px rgba(44, 62, 80, 0.10);
             transition: background 0.2s, transform 0.1s;
         }
+
         button:hover {
             background: linear-gradient(90deg, #764ba2 0%, #667eea 100%);
             transform: translateY(-2px) scale(1.03);
         }
+
         #result {
             margin-top: 20px;
             width: 100%;
@@ -82,9 +92,11 @@
             overflow-y: auto;
             max-height: 70vh;
         }
+
         #result div {
             text-align: center;
         }
+
         #result img {
             width: 100%;
             height: 200px;
@@ -92,6 +104,7 @@
             border-radius: 8px;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
         }
+
         .dl-btn {
             margin-top: 10px;
             padding: 0.6rem 1.2rem;
@@ -104,11 +117,13 @@
             font-size: 1rem;
             transition: background 0.2s;
         }
+
         .dl-btn:hover {
             background: #4f3ca7;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>Formulaire de téléchargement</h1>
@@ -126,6 +141,72 @@
     <script>
         const form = document.getElementById("ytForm");
         const resultDiv = document.getElementById("result");
+
+        // Helper to convert base64url to Uint8Array
+        function base64UrlToUint8Array(base64Url) {
+            const padding = '='.repeat((4 - base64Url.length % 4) % 4);
+            const base64 = (base64Url + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        // Helper to convert ArrayBuffer to base64url
+        function arrayBufferToBase64Url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        async function registerPasskey() {
+            try {
+                const startRes = await fetch('/auth/register_start', { method: 'POST' });
+                if (!startRes.ok) throw new Error('Failed to start registration');
+                const options = await startRes.json();
+
+                // Decode challenge and user id
+                options.publicKey.challenge = base64UrlToUint8Array(options.publicKey.challenge);
+                options.publicKey.user.id = base64UrlToUint8Array(options.publicKey.user.id);
+                if (options.publicKey.excludeCredentials) {
+                    options.publicKey.excludeCredentials.forEach(c => {
+                        c.id = base64UrlToUint8Array(c.id);
+                    });
+                }
+
+                const credential = await navigator.credentials.create(options);
+
+                const credentialData = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64Url(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        attestationObject: arrayBufferToBase64Url(credential.response.attestationObject),
+                        clientDataJSON: arrayBufferToBase64Url(credential.response.clientDataJSON)
+                    }
+                };
+
+                const finishRes = await fetch('/auth/register_finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(credentialData)
+                });
+
+                if (finishRes.ok) {
+                    alert('Passkey enregistrée avec succès !');
+                } else {
+                    alert('Échec de l\'enregistrement de la Passkey');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Erreur WebAuthn: ' + e.message);
+            }
+        }
 
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -146,7 +227,7 @@
                             <br>
                             <img src="${item.uri}" alt="${item.music_name}">
                             <br>
-                            <button class="dl-btn" onclick="triggerDownload('${yt_url}', '${item.music_name.replace(/'/g,"\\'")}', '${item.uri}')">Télécharger MP3</button>
+                            <button class="dl-btn" onclick="triggerDownload('${yt_url}', '${item.music_name.replace(/'/g, "\\'")}', '${item.uri}')">Télécharger MP3</button>
                         </div>`
                     ).join("");
                 } else {
@@ -170,5 +251,13 @@
                 });
         }
     </script>
+    <div style="position: fixed; bottom: 10px; right: 10px;">
+        <button onclick="registerPasskey()"
+            style="background: rgba(255,255,255,0.5); font-size: 0.8rem; padding: 5px 10px;">➕ Passkey</button>
+        <a href="/settings"
+            style="background: rgba(255,255,255,0.5); font-size: 0.8rem; padding: 5px 10px; text-decoration: none; color: black; border-radius: 8px; margin-left: 5px;">⚙️
+            Config</a>
+    </div>
 </body>
+
 </html>

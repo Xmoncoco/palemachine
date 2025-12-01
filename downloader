@@ -8,23 +8,51 @@ def downloader(url, filename, output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Construire le chemin complet du fichier de sortie
-    full_path = os.path.join(output_dir, filename)
+    # Logique pour les playlists et exclusion des mix
+    noplaylist = False
+    if "list=RD" in url:
+        noplaylist = True
+        print("Mix détecté, téléchargement de la playlist désactivé.")
+
+    # Déterminer le template de sortie
+    is_playlist = 'list=' in url and not noplaylist
+
+    if is_playlist:
+        # Si c'est une playlist, on crée un dossier avec le nom donné
+        playlist_dir = os.path.join(output_dir, filename)
+        if not os.path.exists(playlist_dir):
+            os.makedirs(playlist_dir)
+        outtmpl = os.path.join(playlist_dir, '%(title)s.%(ext)s')
+    else:
+        # Si c'est une vidéo unique, on utilise le nom de fichier donné
+        full_path = os.path.join(output_dir, filename)
+        outtmpl = full_path
 
     ydl_opts = {
         'format': 'bestaudio/best',
-        # 'outtmpl' spécifie le template du nom de fichier de sortie
-        'outtmpl': full_path,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
+        'outtmpl': outtmpl,
+        'noplaylist': noplaylist,
+        'writethumbnail': True,
+        'postprocessors': [
+            {
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            },
+            {
+                'key': 'FFmpegMetadata',
+                'add_chapters': True,
+                'add_metadata': True,
+            },
+            {
+                'key': 'EmbedThumbnail',
+            },
+        ],
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         # La méthode download peut lever des exceptions, qu'il faudrait gérer
         ydl.download([url])
-        print(f"Téléchargement terminé : {full_path}.mp3")
+        print(f"Téléchargement terminé.")
 
 if __name__ == "__main__":
     downloader(sys.argv[1],sys.argv[2],sys.argv[3])

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - Palemachine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-y: auto;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Montserrat', Arial, sans-serif;
+        }
+
+        .container {
+            background: #fff;
+            padding: 2.5rem 1.5rem;
+            border-radius: 18px;
+            box-shadow: 0 8px 32px rgba(44, 62, 80, 0.15);
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            text-align: center;
+            color: #4f3ca7;
+            margin-bottom: 1.5rem;
+            font-size: 1.7rem;
+        }
+
+        .form-group {
+            width: 100%;
+            margin-bottom: 1.2rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: bold;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="password"] {
+            width: 100%;
+            padding: 0.7rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: border 0.2s;
+        }
+
+        input:focus {
+            border-color: #764ba2;
+            outline: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 0.8rem;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(44, 62, 80, 0.10);
+            transition: background 0.2s, transform 0.1s;
+            margin-top: 1rem;
+        }
+
+        button:hover {
+            background: linear-gradient(90deg, #764ba2 0%, #667eea 100%);
+            transform: translateY(-2px) scale(1.03);
+        }
+
+        .back-link {
+            margin-top: 1rem;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Configuration</h1>
+        <form id="configForm">
+            <div class="form-group">
+                <label for="path">Dossier de téléchargement</label>
+                <input type="text" id="path" name="path" required>
+            </div>
+            <div class="form-group">
+                <label for="port">Port</label>
+                <input type="number" id="port" name="port" required>
+            </div>
+            <div class="form-group">
+                <label for="domain">Domaine (pour Passkey)</label>
+                <input type="text" id="domain" name="domain" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Mot de passe Admin</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">Sauvegarder et Redémarrer</button>
+        </form>
+        <a href="/" class="back-link">Retour à l'accueil</a>
+    </div>
+
+    <script>
+        // Charger la configuration actuelle
+        async function loadConfig() {
+            try {
+                const res = await fetch('/api/config');
+                if (res.ok) {
+                    const config = await res.json();
+                    document.getElementById('path').value = config.path || '';
+                    document.getElementById('port').value = config.port || 9999;
+                    document.getElementById('domain').value = config.domain || 'localhost';
+                    document.getElementById('password').value = config.password || '';
+                } else {
+                    alert("Impossible de charger la configuration.");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Erreur lors du chargement de la configuration.");
+            }
+        }
+
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            // Convert port to number
+            data.port = parseInt(data.port, 10);
+
+            try {
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    alert("Configuration sauvegardée ! Le serveur va redémarrer (ou vous devez le redémarrer manuellement pour appliquer les changements).");
+                    window.location.href = '/';
+                } else {
+                    alert("Erreur lors de la sauvegarde.");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Erreur réseau.");
+            }
+        });
+
+        loadConfig();
+    </script>
+</body>
+
+</html>
