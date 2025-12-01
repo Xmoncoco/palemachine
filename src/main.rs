@@ -258,6 +258,9 @@ async fn update_system(req: HttpRequest) -> impl Responder {
     }).await;
 
     match result {
+        Ok(Ok(msg)) => HttpResponse::Ok().body(format!("Update successful:\n{}", msg)),
+        Ok(Err(msg)) => HttpResponse::InternalServerError().body(format!("Update failed:\n{}", msg)),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Task join error: {}", e)),
     }
 }
 
