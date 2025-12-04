@@ -127,7 +127,7 @@
 <body>
     <div class="container">
         <h1>Formulaire de téléchargement</h1>
-        <form id="ytForm" method="GET" action="/imagequestion">
+        <form id="ytForm" method="GET" action="imagequestion">
             <input type="text" id="yt_url" name="yt_url" placeholder="URL YouTube" required>
             <input type="text" id="friendlyname" name="friendlyname" placeholder="Nom de la musique" required>
             <button type="submit">Chercher les images</button>
@@ -166,7 +166,7 @@
 
         async function registerPasskey() {
             try {
-                const startRes = await fetch('/auth/register_start', { method: 'POST' });
+                const startRes = await fetch('auth/register_start', { method: 'POST' });
                 if (!startRes.ok) throw new Error('Failed to start registration');
                 const options = await startRes.json();
 
@@ -191,7 +191,7 @@
                     }
                 };
 
-                const finishRes = await fetch('/auth/register_finish', {
+                const finishRes = await fetch('auth/register_finish', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(credentialData)
@@ -216,7 +216,7 @@
             resultDiv.innerHTML = "Chargement...";
 
             try {
-                const res = await fetch(`/imagequestion?yt_url=${encodeURIComponent(yt_url)}&friendlyname=${encodeURIComponent(friendlyname)}`);
+                const res = await fetch(`imagequestion?yt_url=${encodeURIComponent(yt_url)}&friendlyname=${encodeURIComponent(friendlyname)}`);
                 const data = await res.json();
 
                 if (Array.isArray(data) && data.length > 0) {
@@ -241,7 +241,7 @@
 
         // Fonction pour appeler le endpoint /downlad
         function triggerDownload(url, name, image) {
-            fetch(`/downlad?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&image=${encodeURIComponent(image)}`)
+            fetch(`downlad?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&image=${encodeURIComponent(image)}`)
                 .then(res => res.text())
                 .then(txt => {
                     alert("téléchargement terminé");
@@ -254,7 +254,7 @@
     <div style="position: fixed; bottom: 10px; right: 10px;">
         <button onclick="registerPasskey()"
             style="background: rgba(255,255,255,0.5); font-size: 0.8rem; padding: 5px 10px;">➕ Passkey</button>
-        <a href="/settings"
+        <a href="settings"
             style="background: rgba(255,255,255,0.5); font-size: 0.8rem; padding: 5px 10px; text-decoration: none; color: black; border-radius: 8px; margin-left: 5px;">⚙️
             Config</a>
     </div>

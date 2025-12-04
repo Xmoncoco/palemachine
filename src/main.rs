@@ -18,6 +18,8 @@ struct AppState {
     // Map session_id -> (reg_state, login_state)
     // In a real app, use a proper session store (Redis, DB)
     auth_states: Arc<Mutex<HashMap<Uuid, AuthState>>>,
+    language: String,
+    public_url: String,
 }
 
 enum AuthState {
@@ -155,15 +157,18 @@ async fn login(data: web::Json<LoginData>, state: web::Data<AppState>) -> impl R
     }
 }
 
-async fn root(req : HttpRequest) -> impl Responder{
+async fn root(req : HttpRequest, data: web::Data<AppState>) -> impl Responder{
     if let Some(cookie) = req.cookie("access_token") {
         if cookie.value() == "granted" {
             if let Some(peer_addr) = req.peer_addr() {
                 println!("Client IP: {}", peer_addr.ip());
             }
-            let html = fs::read_to_string("pages/root.html").unwrap_or_else(|_| {
+            let mut html = fs::read_to_string("pages/root.html").unwrap_or_else(|_| {
                 "<h1>Failed to read index.html restart your server</h1>".to_string()
             });
+
+            html = html.replace("lang=\"fr\"", &format!("lang=\"{}\"", data.language));
+            html = html.replace("<head>", &format!("<head><base href=\"{}\">", data.public_url));
         
             return HttpResponse::Ok()
                 .content_type("text/html; charset=utf-8")
@@ -171,9 +176,12 @@ async fn root(req : HttpRequest) -> impl Responder{
         }
     }
 
-    let html = fs::read_to_string("pages/login.html").unwrap_or_else(|_| {
+    let mut html = fs::read_to_string("pages/login.html").unwrap_or_else(|_| {
         "<h1>Failed to read login.html</h1>".to_string()
     });
+
+    html = html.replace("lang=\"fr\"", &format!("lang=\"{}\"", data.language));
+    html = html.replace("<head>", &format!("<head><base href=\"{}\">", data.public_url));
 
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
@@ -194,7 +202,7 @@ struct Downladstruct {
        
 }
 
-async fn download(req: HttpRequest, query: web::Query<Downladstruct>) -> impl Responder {
+async fn download(req: HttpRequest, query: web::Query<Downladstruct>, data: web::Data<AppState>) -> impl Responder {
     if let Some(peer_addr) = req.peer_addr() {
         println!("Client IP: {}", peer_addr.ip());
         
@@ -203,13 +211,15 @@ async fn download(req: HttpRequest, query: web::Query<Downladstruct>) -> impl Re
             .body("hello world");
     }
 
-    let html = fs::read_to_string("pages/imageQuestion.html").unwrap_or_else(|_| {
+    let mut html = fs::read_to_string("pages/imageQuestion.html").unwrap_or_else(|_| {
         "<h1>Failed to read imageQuestion.html restart your server</h1>".to_string()
     });
+    html = html.replace("lang=\"fr\"", &format!("lang=\"{}\"", data.language));
+    html = html.replace("<head>", &format!("<head><base href=\"{}\">", data.public_url));
     HttpResponse::Ok().body(html)
 }
 
-async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> impl Responder {
+async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>, data: web::Data<AppState>) -> impl Responder {
     if let Some(peer_addr) = req.peer_addr() {
         println!("Client IP: {}", peer_addr.ip());
         let ip = peer_addr.ip().to_string();
@@ -222,9 +232,11 @@ async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> i
             .json(result); 
     }
 
-    let html = fs::read_to_string("pages/imageQuestion.html").unwrap_or_else(|_| {
+    let mut html = fs::read_to_string("pages/imageQuestion.html").unwrap_or_else(|_| {
         "<h1>Failed to read imageQuestion.html restart your server</h1>".to_string()
     });
+    html = html.replace("lang=\"fr\"", &format!("lang=\"{}\"", data.language));
+    html = html.replace("<head>", &format!("<head><base href=\"{}\">", data.public_url));
     HttpResponse::Ok().body(html)
 }
 
@@ -270,6 +282,8 @@ struct Config {
     port: u16,
     password: String,
     domain: String,
+    language: String,
+    public_url: String,
 }
 
 async fn get_config(req: HttpRequest) -> impl Responder {
@@ -289,6 +303,8 @@ async fn get_config(req: HttpRequest) -> impl Responder {
         port: 9999,
         password: "admin".to_string(),
         domain: "localhost".to_string(),
+        language: "fr".to_string(),
+        public_url: "/".to_string(),
     });
     
     HttpResponse::Ok().json(config)
@@ -312,7 +328,7 @@ async fn save_config(req: HttpRequest, new_config: web::Json<Config>) -> impl Re
     }
 }
 
-async fn settings_page(req: HttpRequest) -> impl Responder {
+async fn settings_page(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
     // Security check
     if let Some(cookie) = req.cookie("access_token") {
         if cookie.value() != "granted" {
@@ -322,9 +338,13 @@ async fn settings_page(req: HttpRequest) -> impl Responder {
         return HttpResponse::Found().append_header(("Location", "/")).finish();
     }
 
-    let html = fs::read_to_string("pages/settings.html").unwrap_or_else(|_| {
+    let mut html = fs::read_to_string("pages/settings.html").unwrap_or_else(|_| {
         "<h1>Failed to read settings.html</h1>".to_string()
     });
+    
+    html = html.replace("lang=\"fr\"", &format!("lang=\"{}\"", data.language));
+    html = html.replace("<head>", &format!("<head><base href=\"{}\">", data.public_url));
+
     HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
 }
 
@@ -359,6 +379,8 @@ async fn main() -> std::io::Result<()>{
 port = 9999
 password = "admin"
 domain = "localhost"
+language = "fr"
+public_url = "/"
 "#;
         fs::write("config.toml", default_config).expect("Failed to create default config.toml");
     }
@@ -383,6 +405,23 @@ domain = "localhost"
         .and_then(|v| v.as_str())
         .unwrap_or("localhost");
 
+    let language = config.get("language")
+        .and_then(|v| v.as_str())
+        .unwrap_or("fr")
+        .to_string();
+
+    let public_url = config.get("public_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/")
+        .to_string();
+    
+    // Ensure public_url ends with /
+    let public_url = if public_url.ends_with('/') {
+        public_url
+    } else {
+        format!("{}/", public_url)
+    };
+
     let rp_id = domain;
     let rp_origin = Url::parse(&format!("https://{}", domain)).unwrap_or_else(|_| Url::parse(&format!("http://{}", domain)).unwrap());
     
@@ -397,7 +436,9 @@ domain = "localhost"
             .app_data(web::Data::new(AppState { 
                 password: password.clone(),
                 webauthn: webauthn.clone(),
-                auth_states: auth_states.clone()
+                auth_states: auth_states.clone(),
+                language: language.clone(),
+                public_url: public_url.clone(),
             }))
             .route("/", web::get().to(root))
             .route("/login", web::post().to(login))
