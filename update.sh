@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Ensure we are in the correct directory to run git pull
 # The script might be run from 'package' dir or project root.
