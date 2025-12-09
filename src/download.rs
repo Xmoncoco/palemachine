@@ -260,7 +260,7 @@ pub async fn send_download(url: &str, name: &str, image: &str) {
             .get("path")
             .and_then(|v| v.as_str())
             .expect("Champ 'path' manquant ou mal formé dans config.toml");
-        let pythonpath = "python3";
+        let pythonpath = "./venv/bin/python3";
         let script_path = "./downloader"; // Extension .py explicite
 
         // On passe l'URL complète au script Python pour qu'il gère les playlists

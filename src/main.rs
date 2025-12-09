@@ -457,3 +457,7 @@ public_url = "/"
     .run()
     .await
 }
+//just how to make a download request with parameters
+//http://url:port/downlad?name=yourfilename&url=yourdownloadurl&image=yourimageurl
+//example
+//http://localhost:9999/downlad?name=myvideo&url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&image=https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg
