@@ -1,4 +1,4 @@
-use std::{ fs::{self, File}, process::Command};
+use std::{ fs::{self, File}, process::Command, path::Path};
 use actix_web::http::header;
 use reqwest::Client;
 use chrono::Utc;
@@ -245,6 +245,51 @@ pub async fn get_spotify_token() -> String {
     token.access_token
 }
 
+/// Find the Python interpreter, trying venv first, then falling back to system python3
+fn find_python_interpreter() -> Result<String, String> {
+    // Try venv first (for local development and manual installations)
+    let venv_python = "./venv/bin/python3";
+    if Path::new(venv_python).exists() {
+        return Ok(venv_python.to_string());
+    }
+    
+    // Fall back to system python3 (for systemwide installations like AUR)
+    let system_python = "python3";
+    // Check if python3 is available in PATH
+    if Command::new(system_python)
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
+        return Ok(system_python.to_string());
+    }
+    
+    Err("Python interpreter not found. Tried: ./venv/bin/python3, python3".to_string())
+}
+
+/// Find the downloader script, checking multiple possible locations
+fn find_downloader_script() -> Result<String, String> {
+    // Try current directory first
+    let local_script = "./downloader";
+    if Path::new(local_script).exists() {
+        return Ok(local_script.to_string());
+    }
+    
+    // Try relative to executable location (for packaged installations)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let exe_script = exe_dir.join("downloader");
+            if exe_script.exists() {
+                if let Some(script_str) = exe_script.to_str() {
+                    return Ok(script_str.to_string());
+                }
+            }
+        }
+    }
+    
+    Err("Downloader script not found. Tried: ./downloader and locations relative to executable".to_string())
+}
+
 pub async fn send_download(url: &str, name: &str, image: &str) {
     let url = url.to_string();
     let name = name.to_string();
@@ -260,22 +305,50 @@ pub async fn send_download(url: &str, name: &str, image: &str) {
             .get("path")
             .and_then(|v| v.as_str())
             .expect("Champ 'path' manquant ou mal formé dans config.toml");
-        let pythonpath = "./venv/bin/python3";
-        let script_path = "./downloader"; // Extension .py explicite
+        
+        // Find Python interpreter and downloader script
+        let pythonpath = match find_python_interpreter() {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("❌ {}", e);
+                panic!("Python interpreter not found");
+            }
+        };
+        
+        let script_path = match find_downloader_script() {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("❌ {}", e);
+                panic!("Downloader script not found");
+            }
+        };
+        
+        println!("Using Python: {}", pythonpath);
+        println!("Using downloader script: {}", script_path);
 
         // On passe l'URL complète au script Python pour qu'il gère les playlists
         let output_file = format!("{}", name);
-        let status = Command::new(pythonpath)
-            .arg(script_path)
+        let status = Command::new(&pythonpath)
+            .arg(&script_path)
             .arg(&url)
             .arg(&output_file)
             .arg(path)
-            .status()
-            .expect("Erreur lors du lancement du script Python");
-        if status.success() {
-            println!("✅ Script Python exécuté avec succès !");
-        } else {
-            eprintln!("❌ Échec du script Python (code: {:?})", status.code());
+            .status();
+            
+        match status {
+            Ok(status) => {
+                if status.success() {
+                    println!("✅ Script Python exécuté avec succès !");
+                } else {
+                    eprintln!("❌ Échec du script Python (code: {:?})", status.code());
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ Erreur lors du lancement du script Python: {:?}", e);
+                eprintln!("   Python path: {}", pythonpath);
+                eprintln!("   Script path: {}", script_path);
+                panic!("Erreur lors du lancement du script Python: {:?}", e);
+            }
         }
 
         // Téléchargement de l'image
@@ -371,5 +444,43 @@ mod tests {
 
         let bad_json = "{";
         assert_eq!(get_title_from_json(bad_json), None);
+    }
+
+    #[test]
+    fn test_find_python_interpreter() {
+        // This test will succeed if either venv or system python3 is available
+        let result = find_python_interpreter();
+        // On most systems, at least system python3 should be available
+        // We just check that it returns something (Ok) or gives a clear error message
+        match result {
+            Ok(path) => {
+                assert!(!path.is_empty());
+                // Verify it's one of the expected paths
+                assert!(
+                    path == "./venv/bin/python3" || path == "python3",
+                    "Unexpected python path: {}",
+                    path
+                );
+            }
+            Err(e) => {
+                assert!(e.contains("Python interpreter not found"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_find_downloader_script() {
+        // This test verifies the function logic
+        let result = find_downloader_script();
+        // Should either find the script or return an appropriate error
+        match result {
+            Ok(path) => {
+                assert!(!path.is_empty());
+                assert!(path.contains("downloader"));
+            }
+            Err(e) => {
+                assert!(e.contains("Downloader script not found"));
+            }
+        }
     }
 }
