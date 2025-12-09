@@ -46,6 +46,8 @@
             cp bambam_morigatsu_chuapo.sh $out/share/palemachine/
             cp update.sh $out/share/palemachine/
             
+            # Wrap the binary to run from the installation directory
+            # The app's path resolution will find ./downloader and use system python3
             wrapProgram $out/bin/palemachine \
               --chdir $out/share/palemachine \
               --prefix PATH : ${pkgs.lib.makeBinPath [ pythonEnv pkgs.ffmpeg ]}
