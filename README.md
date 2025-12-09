@@ -28,6 +28,47 @@ You can install Palemachine directly from the AUR using your preferred AUR helpe
 yay -S palemachine
 ```
 
+### NixOS
+
+Palemachine can be easily installed on NixOS using the provided Nix flake:
+
+#### Option A: Run directly with Nix flakes
+
+```bash
+nix run github:Xmoncoco/palemachine
+```
+
+#### Option B: Add to your system configuration
+
+Add to your `flake.nix`:
+
+```nix
+{
+  inputs.palemachine.url = "github:Xmoncoco/palemachine";
+  
+  outputs = { self, nixpkgs, palemachine, ... }: {
+    nixosConfigurations.yourhost = nixpkgs.lib.nixosSystem {
+      modules = [
+        {
+          environment.systemPackages = [ palemachine.packages.${system}.default ];
+        }
+      ];
+    };
+  };
+}
+```
+
+#### Option C: Build from local repository
+
+```bash
+git clone https://github.com/Xmoncoco/palemachine.git
+cd palemachine
+nix build .#
+./result/bin/palemachine
+```
+
+The Nix package includes all required dependencies (Python, yt-dlp, ffmpeg, etc.) and uses the system Python with proper path resolution, so no virtual environment setup is needed.
+
 ### Manual Installation
 
 #### Option A: From Release
