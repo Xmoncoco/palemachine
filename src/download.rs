@@ -280,9 +280,8 @@ fn find_downloader_script() -> Result<String, String> {
         if let Some(exe_dir) = exe_path.parent() {
             let exe_script = exe_dir.join("downloader");
             if exe_script.exists() {
-                if let Some(script_str) = exe_script.to_str() {
-                    return Ok(script_str.to_string());
-                }
+                // Use to_string_lossy to handle non-UTF-8 paths
+                return Ok(exe_script.to_string_lossy().to_string());
             }
         }
     }
