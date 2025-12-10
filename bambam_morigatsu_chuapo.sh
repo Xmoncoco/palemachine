@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #if you ask why the name check this music https://www.youtube.com/watch?v=Yeg--gomuv8 and becauso of the crash that I got when finishing the 
 # Vérification des arguments
 if [ -z "$1" ]; then
