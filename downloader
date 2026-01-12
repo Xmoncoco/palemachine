@@ -9,11 +9,21 @@ def get_opts(path, filename_tmpl):
         'outtmpl': os.path.join(path, filename_tmpl),
         'quiet': False,
         'no_warnings': True,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
+
+
+        'postprocessors': [
+            {
+                # 2. Conversion en MP3
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            },
+            {
+                # 4. Écriture des métadonnées (Artiste, Titre, Album, etc.)
+                'key': 'FFmpegMetadata',
+                'add_metadata': True,
+            },
+        ],
     }
 
 def download_single(url, name, base_path, artist="Unknown", album="Unknown"):
