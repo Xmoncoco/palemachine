@@ -160,13 +160,17 @@
 
         // Fonction pour appeler le endpoint /downlad
         function triggerDownload(url, name, image) {
-            fetch(`/downlad?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&image=${encodeURIComponent(image)}`)
+            const album = name; // On utilise le nom de l'album comme nom
+            const artist = "Unknown"; // Artist par défaut
+
+            fetch(`/downlad?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}&image=${encodeURIComponent(image)}&album=${encodeURIComponent(album)}&artist=${encodeURIComponent(artist)}`)
                 .then(res => res.text())
                 .then(txt => {
-                    alert("téléchargement terminé");
+                    alert("Téléchargement lancé ! Vérifiez les logs du serveur.");
                 })
                 .catch(err => {
                     alert("Erreur lors du lancement du téléchargement");
+                    console.error(err);
                 });
         }
     </script>

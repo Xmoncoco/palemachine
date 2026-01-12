@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{fs};
 use actix_web::{ web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::Deserialize;
 
@@ -28,8 +28,11 @@ struct ImageQuestion {
     friendlyname: String,
 }
 
+
 #[derive(Deserialize)]
 struct Downladstruct {
+    album : String,
+    artist : String,
     name: String,
     url: String,
     image: String,
@@ -39,8 +42,9 @@ struct Downladstruct {
 async fn download(req: HttpRequest, query: web::Query<Downladstruct>) -> impl Responder {
     if let Some(peer_addr) = req.peer_addr() {
         println!("Client IP: {}", peer_addr.ip());
-        
-        send_download(&query.url, &query.name, &query.image).await;
+        println!("📥 Route /downlad appelée avec URL: {}", &query.url);
+
+        send_download(&query.url, &query.name, &query.image,&query.album,&query.artist).await;
         return HttpResponse::Ok()
             .body("hello world");
     }
@@ -70,10 +74,10 @@ async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> i
     HttpResponse::Ok().body(html)
 }
 
-fn get_version()-> Result<String, reqwest::Error>{
-    let githubversion = reqwest::blocking::get("https://raw.githubusercontent.com/Xmoncoco/palemachine/refs/heads/master/.version")?;
-    let version = githubversion.text()?;
-    return Ok(version);
+async fn get_version() -> Result<String, reqwest::Error> {
+    let githubversion = reqwest::get("https://raw.githubusercontent.com/Xmoncoco/palemachine/refs/heads/master/.version").await?;
+    let version = githubversion.text().await?;
+    Ok(version)
 }
 
 #[actix_web::main]
@@ -84,7 +88,7 @@ async fn main() -> std::io::Result<()>{
         .expect(".version");
 
     let local_version = version.trim();
-    match get_version() {
+    match get_version().await {
         Ok(github_version) => {
             let remote_version = github_version.trim();
 
@@ -98,7 +102,9 @@ async fn main() -> std::io::Result<()>{
             println!("❌ Unable to get the remote version: {}", e);
         }
     }
+    
     let _db = db_link::init();
+
     let configfile = fs::read_to_string("config.toml")
             .expect("config.toml manquant !");
     let config: toml::Value = toml::from_str(&configfile)

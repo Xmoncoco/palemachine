@@ -2,29 +2,88 @@ import yt_dlp
 import sys
 import os
 
-# La fonction prend maintenant un troisième argument pour le répertoire de sortie et le nom de fichier
-def downloader(url, filename, output_dir):
-    # S'assurer que le répertoire de sortie existe
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Construire le chemin complet du fichier de sortie
-    full_path = os.path.join(output_dir, filename)
-
-    ydl_opts = {
+def get_opts(path, filename_tmpl):
+    """Configuration commune pour yt-dlp"""
+    return {
         'format': 'bestaudio/best',
-        # 'outtmpl' spécifie le template du nom de fichier de sortie
-        'outtmpl': full_path,
+        'outtmpl': os.path.join(path, filename_tmpl),
+        'quiet': False,
+        'no_warnings': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        # La méthode download peut lever des exceptions, qu'il faudrait gérer
+
+def download_single(url, name, base_path, artist="Unknown", album="Unknown"):
+    # Structure: base_path/Artist/Album/Name.mp3
+    # On nettoie les noms pour éviter les erreurs de chemin (optionnel mais conseillé)
+    output_dir = os.path.join(base_path, artist, album)
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
+    print(f"📥 Téléchargement: {name} -> {output_dir}")
+    
+    # On force le nom du fichier final
+    opts = get_opts(output_dir, f"{name}.%(ext)s")
+    
+    # On peut injecter les métadonnées pour que le lecteur audio affiche les bonnes infos
+    opts['postprocessors'].append({
+        'key': 'FFmpegMetadata',
+        'add_metadata': True,
+    })
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
-        print(f"Téléchargement terminé : {full_path}.mp3")
+
+def download_playlist(url, base_path, playlist_name):
+    # Structure: base_path/Playlists/PlaylistName/Titre.mp3
+    output_dir = os.path.join(base_path, "Playlists", playlist_name)
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    print(f"saved playlist to: {output_dir}")
+    
+    # Pour une playlist, on garde le titre original de la vidéo
+    opts = get_opts(output_dir, '%(title)s.%(ext)s')
+    
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
 
 if __name__ == "__main__":
-    downloader(sys.argv[1],sys.argv[2],sys.argv[3])
+    # Attendu: python downloader.py [mode] [url] [base_path] [args...]
+    if len(sys.argv) < 4:
+        print("❌ Arguments insuffisants")
+        sys.exit(1)
+
+    mode = sys.argv[1]
+    url = sys.argv[2]
+    base_path = sys.argv[3]
+
+    try:
+        if mode == "single":
+            # Args: mode, url, path, name, artist, album
+            if len(sys.argv) >= 7:
+                name = sys.argv[4]
+                artist = sys.argv[5]
+                album = sys.argv[6]
+                download_single(url, name, base_path, artist, album)
+            else:
+                print("❌ Arguments manquants pour le mode single (name, artist, album requis)")
+                sys.exit(1)
+
+        elif mode == "playlist":
+            # Args: mode, url, path, playlist_name
+            playlist_name = sys.argv[4] if len(sys.argv) > 4 else "Unknown Playlist"
+            download_playlist(url, base_path, playlist_name)
+        
+        else:
+            print(f"❌ Mode inconnu: {mode}")
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"❌ Erreur critique Python: {e}")
+        sys.exit(1)
