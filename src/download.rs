@@ -1,4 +1,4 @@
-use std::{ fs::{self, File}, process::Command};
+use std::{ fs::{self}, process::Command};
 use actix_web::http::header;
 use reqwest::Client;
 use chrono::Utc;
@@ -29,7 +29,9 @@ pub struct SimpleSpotifyThumbnail{
 }
 
 
-
+pub fn sanitise_name(name: &str) -> String {
+    name.replace('/', "_")
+}
 pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSpotifyThumbnail> {
     let url = url.clone();
     let name = name.clone();
@@ -42,7 +44,7 @@ pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSp
 
         if let Ok(youtube_api_key) = std::env::var("YOUTUBE_API_KEY") {
             if is_playlist {
-                if let Some(id) = extract_param(&url, "list") {
+                if let Some(id) = extract_param(&url, "list")  {
                     println!("a new image ask with the playlist ID: {}", id);
                     return process_playlist(&id, &youtube_api_key, &url, &name, &ip).await;
                 }
@@ -62,6 +64,9 @@ pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSp
 }
 
 fn is_youtube_playlist(url: &str) -> bool {
+    if let Some(radio) = extract_param(url, "stratradio") {
+        return radio != "1";
+    }
     url.contains("youtube.com/playlist") ||
     url.contains("youtu.be/playlist") ||
     (url.contains("list=") && !url.contains("&v="))
@@ -278,7 +283,7 @@ pub async fn get_spotify_token() -> String {
     if cfg!(debug_assertions){
         println!("{} {}",token.token_type,token.expires_in)
     }
-    
+
     token.access_token
 }
 
@@ -292,8 +297,12 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
     let name_clone = name.clone();
     let is_playlist = is_youtube_playlist(&url);
 
+
+
     println!("🚀 Début du téléchargement...");
 
+
+    let name_for_closure = name.clone();
     let download_result = tokio::task::spawn_blocking(move || -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         println!("⏳ spawn_blocking démarré");
 
@@ -305,84 +314,112 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
             .ok_or("❌ Champ 'path' manquant dans config.toml")?
             .to_string();
 
+
         let python_bin = "./venv/bin/python3";
         let script_path = "downloader";
 
         if is_playlist {
+            let sanitised_name = sanitise_name(&name_for_closure);
             println!("📂 Mode Playlist détecté");
-            println!("🐍 Lancement: {} {} playlist {} {} {}", python_bin, script_path, &url, &path, &name);
+            println!("🐍 Lancement: {} {} playlist {} {} {}", python_bin, script_path, &url, &path, &name_for_closure);
 
-            let status = Command::new(python_bin)
+            let output = Command::new(python_bin)
                 .arg(script_path)
                 .arg("playlist")
                 .arg(&url)
                 .arg(&path)
-                .arg(&name)
-                .status()?;
+                .arg(&sanitised_name)
+                .output()?;
 
-            if status.success() {
+            if output.status.success() {
                 println!("✅ Playlist traitée par Python.");
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Some(last_line) = stdout.lines().last() {
+                    println!("📊 Données retournées: {}", last_line);
+                }
+                // Pour une playlist, on retourne le chemin de base (path)
+                // ou last_line si ton script python renvoie le dossier de la playlist ?
+                // Je garde ton comportement original : retourner 'path'
                 Ok(path)
             } else {
-                let err_msg = format!("❌ Le script Python a échoué (code: {:?})", status.code());
+                let err_msg = format!("❌ Le script Python a échoué (code: {:?})", output.status.code());
                 eprintln!("{}", err_msg);
                 Err(err_msg.into())
             }
         } else {
             println!("🎵 Mode Musique détecté");
-            println!("🐍 Lancement: {} {} single {} {} {} {} {}", python_bin, script_path, &url, &path, &name, &artist, &album);
+            println!("🐍 Lancement: {} {} single {} {} {} {} {}", python_bin, script_path, &url, &path, &name_for_closure, &artist, &album);
 
-            let status = Command::new(python_bin)
+            let output = Command::new(python_bin)
                 .arg(script_path)
                 .arg("single")
                 .arg(&url)
                 .arg(&path)
-                .arg(&name)
+                .arg(&name_for_closure)
                 .arg(&artist)
                 .arg(&album)
-                .status()?;
+                .output()?;
 
-            if status.success() {
+            if output.status.success() {
                 println!("✅ Musique traitée par Python.");
-                Ok(path)
+                let stdout = String::from_utf8_lossy(&output.stdout);
+
+                // C'est ICI qu'on capture le chemin retourné par Python
+                let final_path = if let Some(last_line) = stdout.lines().last() {
+                    println!("📊 Données retournées: {}", last_line);
+                    last_line.to_string()
+                } else {
+                    // Fallback si pas de sortie (peu probable si success)
+                    path.clone()
+                };
+
+                // ON RETOURNE CE CHEMIN SPECIFIQUE
+                Ok(final_path)
             } else {
-                let err_msg = format!("❌ Le script Python a échoué (code: {:?})", status.code());
+                let err_msg = format!("❌ Le script Python a échoué (code: {:?})", output.status.code());
                 eprintln!("{}", err_msg);
                 Err(err_msg.into())
             }
         }
     })
-    .await
-    .expect("Erreur critique dans spawn_blocking");
+        .await; // .expect supprimé ici pour gérer l'erreur de JoinHandle proprement
 
     println!("📦 spawn_blocking terminé");
 
     match download_result {
-        Ok(path) => {
-            if !is_playlist {
-                println!("🖼️ Téléchargement de la cover...");
-                match download_image(&image, &path, &name_clone).await {
-                    Ok(_) => println!("✅ Cover téléchargée avec succès."),
-                    Err(e) => eprintln!("❌ Erreur téléchargement cover: {}", e),
+        // 1. Le thread a bien tourné (JoinHandle OK)
+        Ok(task_result) => {
+            match task_result {
+                // 2. Le code à l'intérieur a réussi (Result OK) et nous donne le 'returned_path'
+                Ok(returned_path) => {
+                    println!("🖼️ Téléchargement de la cover vers : {}", returned_path);
+                    // On utilise 'returned_path' qui vient d'être généré
+                    match download_image(&image, &returned_path,&name).await {
+                        Ok(_) => println!("✅ Cover téléchargée avec succès."),
+                        Err(e) => eprintln!("❌ Erreur téléchargement cover: {}", e),
+                    }
                 }
-            } else {
-                println!("ℹ️ Pas de cover à télécharger pour une playlist.");
+                Err(e) => {
+                    eprintln!("❌ Erreur logique script: {}", e);
+                }
             }
         }
         Err(e) => {
-            eprintln!("❌ Erreur: {}", e);
+            eprintln!("❌ Erreur critique thread (panic): {}", e);
         }
     }
 }
 
-async fn download_image(url: &str,output_path: &str,name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let real_path = format!("{}/{}.jpg", output_path, name);
+async fn download_image(url: &str,output_path: &String,name : &String) -> Result<(), Box<dyn std::error::Error>> {
+    tokio::fs::create_dir_all(output_path).await?;
 
+    let real_path = format!("{}/{}.jpg", output_path,sanitise_name(name));
+    println!("{}",real_path);
     let bytes = reqwest::get(url).await?.bytes().await?;
 
     tokio::fs::write(&real_path, &bytes).await?;
-
-    Command::new("./bambam_morigatsu_chuapo.sh")
+    println!("./bambam_morigatsu_chuapo {}",output_path);
+    Command::new("./bambam_morigatsu_chuapo") //dont forget to not put the .sh extension
         .arg(output_path)
         .status()?;
 
