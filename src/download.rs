@@ -5,7 +5,8 @@ use chrono::Utc;
 use crate::{ db_link::{self, add_entry} };
 use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose, Engine as _};
-
+use tokio::process::Command as TokioCommand; // Pour le script de permission
+use std::process::Command as StdCommand; // Pour le script Python (dans spawn_blocking)
 use toml;
 
 
@@ -286,7 +287,6 @@ pub async fn get_spotify_token() -> String {
 
     token.access_token
 }
-
 pub async fn send_download(url: &str, name: &str, image: &str, album: &str, artist: &str) {
     let url = url.to_string();
     let name = name.to_string();
@@ -294,134 +294,107 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
     let artist = artist.to_string();
     let album = album.to_string();
 
-    let name_clone = name.clone();
-    let is_playlist = is_youtube_playlist(&url);
+    println!("🚀 Début du trigger Python...");
 
+    // On prépare les données pour le thread bloquant
+    let name_for_python = name.clone();
 
-
-    println!("🚀 Début du téléchargement...");
-
-
-    let name_for_closure = name.clone();
+    // Tâche lourde (Python) -> Thread séparé
     let download_result = tokio::task::spawn_blocking(move || -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        println!("⏳ spawn_blocking démarré");
-
         let configfile = fs::read_to_string("config.toml")?;
         let config: toml::Value = toml::from_str(&configfile)?;
-        let path = config
-            .get("path")
+        let base_path = config.get("path")
             .and_then(|v| v.as_str())
-            .ok_or("❌ Champ 'path' manquant dans config.toml")?
+            .ok_or("❌ Config path manquant")?
             .to_string();
 
-
         let python_bin = "./venv/bin/python3";
-        let script_path = "downloader";
+        let script_path = "downloader"; // Ajoute l'extension .py si nécessaire
+        let sanitised_name = sanitise_name(&name_for_python);
 
-        if is_playlist {
-            let sanitised_name = sanitise_name(&name_for_closure);
-            println!("📂 Mode Playlist détecté");
-            println!("🐍 Lancement: {} {} playlist {} {} {}", python_bin, script_path, &url, &path, &name_for_closure);
+        // Construction de la commande (identique à ton code)
+        let mut cmd = StdCommand::new(python_bin);
+        cmd.arg(script_path);
 
-            let output = Command::new(python_bin)
-                .arg(script_path)
-                .arg("playlist")
-                .arg(&url)
-                .arg(&path)
-                .arg(&sanitised_name)
-                .output()?;
+        if is_youtube_playlist(&url) {
+            cmd.args(&["playlist", &url, &base_path, &sanitised_name]);
+        } else {
+            cmd.args(&["single", &url, &base_path, &sanitised_name, &artist, &album]);
+        }
 
-            if output.status.success() {
-                println!("✅ Playlist traitée par Python.");
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if let Some(last_line) = stdout.lines().last() {
-                    println!("📊 Données retournées: {}", last_line);
-                }
-                // Pour une playlist, on retourne le chemin de base (path)
-                // ou last_line si ton script python renvoie le dossier de la playlist ?
-                // Je garde ton comportement original : retourner 'path'
+        println!("🐍 Exécution Python...");
+        let output = cmd.output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            // --- CORRECTION CRITIQUE ARIA2C ---
+            // On ne prend pas aveuglément la dernière ligne.
+            // On cherche la dernière ligne qui est un chemin valide (commence par / ou contient le base_path)
+            let valid_path = stdout.lines()
+                .rev() // On part de la fin
+                .find(|line| line.trim().starts_with("/") || line.contains(&base_path)) // Critère de filtrage
+                .map(|l| l.trim().to_string());
+
+            if let Some(path) = valid_path {
+                println!("✅ Python Success. Chemin capturé: {}", path);
                 Ok(path)
             } else {
-                let err_msg = format!("❌ Le script Python a échoué (code: {:?})", output.status.code());
-                eprintln!("{}", err_msg);
-                Err(err_msg.into())
+                // Fallback: Si Python n'a rien craché de propre, on devine le chemin
+                // C'est risqué mais mieux que de crash
+                eprintln!("⚠️ Attention: Python n'a pas retourné de chemin clair via stdout (bruit aria2c?). Utilisation du chemin par défaut.");
+                if is_youtube_playlist(&url) {
+                    Ok(format!("{}/Playlists/{}", base_path, sanitised_name))
+                } else {
+                    Ok(format!("{}/{}/{}", base_path, sanitise_name(&artist), sanitise_name(&album)))
+                }
             }
         } else {
-            println!("🎵 Mode Musique détecté");
-            println!("🐍 Lancement: {} {} single {} {} {} {} {}", python_bin, script_path, &url, &path, &name_for_closure, &artist, &album);
-
-            let output = Command::new(python_bin)
-                .arg(script_path)
-                .arg("single")
-                .arg(&url)
-                .arg(&path)
-                .arg(&name_for_closure)
-                .arg(&artist)
-                .arg(&album)
-                .output()?;
-
-            if output.status.success() {
-                println!("✅ Musique traitée par Python.");
-                let stdout = String::from_utf8_lossy(&output.stdout);
-
-                // C'est ICI qu'on capture le chemin retourné par Python
-                let final_path = if let Some(last_line) = stdout.lines().last() {
-                    println!("📊 Données retournées: {}", last_line);
-                    last_line.to_string()
-                } else {
-                    // Fallback si pas de sortie (peu probable si success)
-                    path.clone()
-                };
-
-                // ON RETOURNE CE CHEMIN SPECIFIQUE
-                Ok(final_path)
-            } else {
-                let err_msg = format!("❌ Le script Python a échoué (code: {:?})", output.status.code());
-                eprintln!("{}", err_msg);
-                Err(err_msg.into())
-            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("❌ Python Error (Code {:?}): {}", output.status.code(), stderr).into())
         }
-    })
-        .await; // .expect supprimé ici pour gérer l'erreur de JoinHandle proprement
+    }).await;
 
-    println!("📦 spawn_blocking terminé");
-
+    // Gestion du résultat du thread
     match download_result {
-        // 1. Le thread a bien tourné (JoinHandle OK)
-        Ok(task_result) => {
-            match task_result {
-                // 2. Le code à l'intérieur a réussi (Result OK) et nous donne le 'returned_path'
-                Ok(returned_path) => {
-                    println!("🖼️ Téléchargement de la cover vers : {}", returned_path);
-                    // On utilise 'returned_path' qui vient d'être généré
-                    match download_image(&image, &returned_path,&name).await {
-                        Ok(_) => println!("✅ Cover téléchargée avec succès."),
-                        Err(e) => eprintln!("❌ Erreur téléchargement cover: {}", e),
-                    }
-                }
-                Err(e) => {
-                    eprintln!("❌ Erreur logique script: {}", e);
-                }
+        Ok(Ok(returned_path)) => {
+            println!("🖼️ Récupération de la cover vers : {}", returned_path);
+            if let Err(e) = download_image(&image, &returned_path, &name).await {
+                eprintln!("❌ Erreur download_image: {}", e);
             }
-        }
-        Err(e) => {
-            eprintln!("❌ Erreur critique thread (panic): {}", e);
-        }
+        },
+        Ok(Err(e)) => eprintln!("{}", e), // Erreur du script Python
+        Err(e) => eprintln!("❌ Erreur JoinHandle: {}", e), // Crash du thread
     }
 }
 
-async fn download_image(url: &str,output_path: &String,name : &String) -> Result<(), Box<dyn std::error::Error>> {
+async fn download_image(url: &str, output_path: &String, name: &String) -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Création dossier (Async I/O)
     tokio::fs::create_dir_all(output_path).await?;
 
-    let real_path = format!("{}/{}.jpg", output_path,sanitise_name(name));
-    println!("{}",real_path);
-    let bytes = reqwest::get(url).await?.bytes().await?;
+    let clean_name = sanitise_name(name);
+    let file_path = format!("{}/{}.jpg", output_path, clean_name);
 
-    tokio::fs::write(&real_path, &bytes).await?;
-    println!("./bambam_morigatsu_chuapo {}",output_path);
-    Command::new("./bambam_morigatsu_chuapo") //dont forget to not put the .sh extension
+    // 2. Téléchargement (Async HTTP)
+    let bytes = reqwest::get(url).await?.bytes().await?;
+    tokio::fs::write(&file_path, &bytes).await?;
+    println!("📸 Cover sauvegardée: {}", file_path);
+
+    // 3. Script de permissions (CORRECTION ASYNC)
+    // On utilise tokio::process::Command au lieu de std::process::Command
+    // pour ne pas bloquer le serveur web pendant l'exécution du script bash
+    println!("🔧 Lancement du script de permissions...");
+    let status = TokioCommand::new("./bambam_morigatsu_chuapo")
         .arg(output_path)
-        .status()?;
+        .kill_on_drop(true) // Sécurité si la requête est annulée
+        .status()
+        .await?;
+
+    if !status.success() {
+        eprintln!("❌ Le script bambam a échoué avec le code: {:?}", status.code());
+    } else {
+        println!("✅ Permissions appliquées.");
+    }
 
     Ok(())
 }

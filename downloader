@@ -1,83 +1,154 @@
 import yt_dlp
 import sys
 import os
+from yt_dlp.utils import sanitize_filename
 
-def sanitize_filename(name):
-    # On remplace / par _ (ou -)
-    # On supprime aussi les caractères nuls \0 qui sont fatals
-    return name.replace("/", "_").replace("\0", "")
+# ==========================================
+# CONFIGURATION OPTIMISÉE POUR HOMELAB/JELLYFIN
+# ==========================================
 
-def get_opts(path, filename_tmpl):
-    """Configuration commune pour yt-dlp"""
-    return {
-        'format': 'bestaudio/best',
+def get_opts(path, filename_tmpl, is_playlist=False):
+    """
+    Retourne la configuration yt-dlp.
+    Optimisation: M4A natif (Pas de CPU), Aria2c (Vitesse), Archive (Reprise)
+    """
+    opts = {
+        # 1. FORMAT
+        # On demande le meilleur audio qui est DÉJÀ en m4a (AAC).
+        # Ça évite à ffmpeg de devoir réencoder -> CPU usage ~1% au lieu de 100%
+        'format': 'bestaudio[ext=m4a]/bestaudio',
+
+        # 2. CHEMIN ET NOM
         'outtmpl': os.path.join(path, filename_tmpl),
-        'quiet': False,
+
+        # 3. SILENCE ET LOGS
+        # On reste silencieux pour ne pas polluer stdout pour Rust,
+        # sauf pour les erreurs critiques.
+        'quiet': True,
         'no_warnings': True,
 
+        # 4. ACCÉLÉRATEUR RÉSEAU (Aria2c)
+        # Indispensable pour la vitesse sur une seule connexion
+        'external_downloader': 'aria2c',
+        'external_downloader_args': [
+            '-x', '8',  # 8 connexions par fichier
+            '-s', '8',  # Split en 8 morceaux
+            '-k', '1M'  # Taille min des fragments
+        ],
 
+        # 5. SÉCURITÉ ANTI-BAN & REPRISE
+        # Pause entre les téléchargements pour éviter l'erreur 429
+        'sleep_interval': 2,
+        'max_sleep_interval': 10,
+        # Fichier d'historique pour ne pas re-télécharger si ça plante
+        'download_archive': os.path.join(path, 'archive.txt') if is_playlist else None,
+        'ignoreerrors': True, # Continue la playlist même si une vidéo est supprimée
+
+        # 6. POST-TRAITEMENT (Métadonnées uniquement)
         'postprocessors': [
             {
-                # 2. Conversion en MP3
+                # On s'assure que le conteneur est propre, mais SANS réencoder
                 'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
+                'preferredcodec': 'm4a',
             },
             {
-                # 4. Écriture des métadonnées (Artiste, Titre, Album, etc.)
+                # Ajoute les métadonnées (Titre, etc.) dans le fichier
                 'key': 'FFmpegMetadata',
                 'add_metadata': True,
             },
+            {
+                # Intègre la miniature YouTube dans le fichier audio
+                'key': 'EmbedThumbnail',
+            }
         ],
+        # Écrit la miniature sur le disque (utile pour Jellyfin scanner)
+        'writethumbnail': True,
     }
+    return opts
+
+# ==========================================
+# FONCTIONS PRINCIPALES
+# ==========================================
 
 def download_single(url, name, base_path, artist="Unknown", album="Unknown"):
-    # Structure: base_path/Artist/Album/Name.mp3
-    # On nettoie les noms pour éviter les erreurs de chemin (optionnel mais conseillé)
+    # 1. Nettoyage des noms
     name = sanitize_filename(name)
     artist = sanitize_filename(artist)
     album = sanitize_filename(album)
 
+    # 2. Création du dossier : Artist/Album
     output_dir = os.path.join(base_path, artist, album)
-    
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
-    
-    print(f"📥 Téléchargement: {name} -> {output_dir}")
-    
-    # On force le nom du fichier final
-    opts = get_opts(output_dir, f"{name}.%(ext)s")
-    
-    # On peut injecter les métadonnées pour que le lecteur audio affiche les bonnes infos
-    opts['postprocessors'].append({
-        'key': 'FFmpegMetadata',
-        'add_metadata': True,
-    })
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
-    print(output_dir)
+    # 3. Configuration
+    # On force le nom du fichier : Titre.ext
+    opts = get_opts(output_dir, f"{name}.%(ext)s", is_playlist=False)
+
+    # 4. INJECTION DES MÉTADONNÉES (Le Hook)
+    # C'est ici qu'on force les infos venant de Rust (Artist/Album)
+    # à la place de celles de YouTube (souvent moches).
+    def metadata_hook(info, *, incomplete=False):
+        if not incomplete:
+            info['artist'] = artist
+            info['album'] = album
+            # info['title'] = name # Décommenter pour forcer aussi le titre
+        return None
+
+    opts['match_filter'] = metadata_hook
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+
+        # 5. RETOUR POUR RUST (CRITIQUE)
+        # On print le chemin absolu à la fin
+        print(output_dir)
+        sys.stdout.flush()
+
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
 
 def download_playlist(url, base_path, playlist_name):
-    # Structure: base_path/Playlists/PlaylistName/Titre.mp3
-    output_dir = os.path.join(base_path, "Playlists", playlist_name)
+    # 1. Nettoyage
+    playlist_name = sanitize_filename(playlist_name)
 
+    # 2. Création du dossier : Playlists/NomPlaylist
+    output_dir = os.path.join(base_path, "Playlists", playlist_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
-    print(f"saved playlist to: {output_dir}")
-
+    # 3. Configuration
     # Pour une playlist, on garde le titre original de la vidéo
-    opts = get_opts(output_dir, '%(title)s.%(ext)s')
+    opts = get_opts(output_dir, '%(title)s.%(ext)s', is_playlist=True)
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
-    print(output_dir)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+
+        # 4. RETOUR POUR RUST
+        print(output_dir)
+        sys.stdout.flush()
+
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+# ==========================================
+# POINT D'ENTRÉE (CLI)
+# ==========================================
 
 if __name__ == "__main__":
-    # Attendu: python downloader.py [mode] [url] [base_path] [args...]
+    # Attendu par Rust :
+    # [1] mode
+    # [2] url
+    # [3] base_path
+    # [4+] args spécifiques
+
     if len(sys.argv) < 4:
-        print("❌ Arguments insuffisants")
+        print("Usage: python downloader.py [mode] [url] [base_path] ...", file=sys.stderr)
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -86,25 +157,25 @@ if __name__ == "__main__":
 
     try:
         if mode == "single":
-            # Args: mode, url, path, name, artist, album
+            # single url path name artist album
             if len(sys.argv) >= 7:
                 name = sys.argv[4]
                 artist = sys.argv[5]
                 album = sys.argv[6]
                 download_single(url, name, base_path, artist, album)
             else:
-                print("❌ Arguments manquants pour le mode single (name, artist, album requis)")
+                print("ERROR: Arguments manquants pour single", file=sys.stderr)
                 sys.exit(1)
 
         elif mode == "playlist":
-            # Args: mode, url, path, playlist_name
-            playlist_name = sys.argv[4] if len(sys.argv) > 4 else "Unknown Playlist"
-            download_playlist(url, base_path, playlist_name)
-        
+            # playlist url path name
+            name = sys.argv[4] if len(sys.argv) > 4 else "Playlist_Inconnue"
+            download_playlist(url, base_path, name)
+
         else:
-            print(f"❌ Mode inconnu: {mode}")
+            print(f"ERROR: Mode inconnu {mode}", file=sys.stderr)
             sys.exit(1)
 
     except Exception as e:
-        print(f"❌ Erreur critique Python: {e}")
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
