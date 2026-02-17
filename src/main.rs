@@ -116,8 +116,14 @@ async fn main() -> std::io::Result<()>{
         .unwrap_or_else(|| {
             panic!("Champ 'port' manquant ou mal formé dans config.toml")
     });
-    println!("the server has started at 127.0.0.1:{}",port);
-    
+    let path = config
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| {
+            panic!("Champ 'path' manquant ou mal formé dans config.toml")
+    });
+    println!("path: {}", path);
+    println!("the server has started at http://127.0.0.1:{}",port);    
     HttpServer::new(||
         App::new()
             .route("/", web::get().to(root))

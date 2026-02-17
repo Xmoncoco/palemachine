@@ -1,4 +1,4 @@
-use std::{ fs::{self}, process::Command};
+use std::{ fs::{self} };
 use actix_web::http::header;
 use reqwest::Client;
 use chrono::Utc;
@@ -33,6 +33,17 @@ pub struct SimpleSpotifyThumbnail{
 pub fn sanitise_name(name: &str) -> String {
     name.replace('/', "_")
 }
+
+fn get_python_command() -> &'static str {
+    // Si la feature "container" est activée lors du build
+    if cfg!(feature = "container") {
+        "python3" // Le python global d'Alpine
+    } else {
+        // Sinon (ton Arch Linux)
+        "./venv/bin/python"
+    }
+}
+
 pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSpotifyThumbnail> {
     let url = url.clone();
     let name = name.clone();
@@ -288,19 +299,18 @@ pub async fn get_spotify_token() -> String {
     token.access_token
 }
 pub async fn send_download(url: &str, name: &str, image: &str, album: &str, artist: &str) {
+    // Clonage des données pour le thread (comme tu as fait)
     let url = url.to_string();
     let name = name.to_string();
     let image = image.to_string();
     let artist = artist.to_string();
     let album = album.to_string();
+    let name_for_python = name.clone();
 
     println!("🚀 Début du trigger Python...");
 
-    // On prépare les données pour le thread bloquant
-    let name_for_python = name.clone();
-
-    // Tâche lourde (Python) -> Thread séparé
     let download_result = tokio::task::spawn_blocking(move || -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // --- Chargement Config ---
         let configfile = fs::read_to_string("config.toml")?;
         let config: toml::Value = toml::from_str(&configfile)?;
         let base_path = config.get("path")
@@ -308,11 +318,11 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
             .ok_or("❌ Config path manquant")?
             .to_string();
 
-        let python_bin = "./venv/bin/python3";
-        let script_path = "downloader"; // Ajoute l'extension .py si nécessaire
+        // --- Préparation Commande ---
+        let python_bin = get_python_command();
+        let script_path = "downloader"; 
         let sanitised_name = sanitise_name(&name_for_python);
 
-        // Construction de la commande (identique à ton code)
         let mut cmd = StdCommand::new(python_bin);
         cmd.arg(script_path);
 
@@ -328,21 +338,39 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
 
-            // --- CORRECTION CRITIQUE ARIA2C ---
-            // On ne prend pas aveuglément la dernière ligne.
-            // On cherche la dernière ligne qui est un chemin valide (commence par / ou contient le base_path)
-            let valid_path = stdout.lines()
-                .rev() // On part de la fin
-                .find(|line| line.trim().starts_with("/") || line.contains(&base_path)) // Critère de filtrage
-                .map(|l| l.trim().to_string());
+            // --- CORRECTION ET NETTOYAGE ---
+        let valid_path = stdout.lines()
+            .rev()
+            .map(|line| line.trim())
+            // On cherche une ligne qui contient le chemin de base
+            .find(|line| line.contains(&base_path)) 
+            .map(|line| {
+            // --- C'EST ICI QUE LA MAGIE OPÈRE ---
+            // On cherche l'index où commence "/home/coco/download" (base_path)
+                if let Some(index) = line.find(&base_path) {
+                // On coupe la chaîne pour ne garder que la partie à partir du chemin
+                // Cela vire le "[download] 100%..."
+                    line[index..].trim().to_string()
+                } else {
+                // Fallback (peu probable si le find au-dessus a marché)
+                    line.to_string()
+                }
+    });
 
             if let Some(path) = valid_path {
-                println!("✅ Python Success. Chemin capturé: {}", path);
-                Ok(path)
+                // SÉCURITÉ : Si le chemin capturé est un fichier (ex: song.mp3), on prend le dossier parent
+                let path_buf = std::path::PathBuf::from(&path);
+                let final_dir = if path_buf.extension().is_some() {
+                     path_buf.parent().unwrap_or(&path_buf).to_string_lossy().to_string()
+                } else {
+                    path
+                };
+
+                println!("✅ Python Success. Dossier cible: {}", final_dir);
+                Ok(final_dir)
             } else {
-                // Fallback: Si Python n'a rien craché de propre, on devine le chemin
-                // C'est risqué mais mieux que de crash
-                eprintln!("⚠️ Attention: Python n'a pas retourné de chemin clair via stdout (bruit aria2c?). Utilisation du chemin par défaut.");
+                // Fallback (Ton code original)
+                eprintln!("⚠️ Attention: Python n'a pas retourné de chemin clair. Utilisation du fallback.");
                 if is_youtube_playlist(&url) {
                     Ok(format!("{}/Playlists/{}", base_path, sanitised_name))
                 } else {
@@ -355,7 +383,7 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
         }
     }).await;
 
-    // Gestion du résultat du thread
+    // Gestion du résultat
     match download_result {
         Ok(Ok(returned_path)) => {
             println!("🖼️ Récupération de la cover vers : {}", returned_path);
@@ -363,8 +391,8 @@ pub async fn send_download(url: &str, name: &str, image: &str, album: &str, arti
                 eprintln!("❌ Erreur download_image: {}", e);
             }
         },
-        Ok(Err(e)) => eprintln!("{}", e), // Erreur du script Python
-        Err(e) => eprintln!("❌ Erreur JoinHandle: {}", e), // Crash du thread
+        Ok(Err(e)) => eprintln!("{}", e),
+        Err(e) => eprintln!("❌ Erreur JoinHandle: {}", e),
     }
 }
 
@@ -374,7 +402,7 @@ async fn download_image(url: &str, output_path: &String, name: &String) -> Resul
 
     let clean_name = sanitise_name(name);
     let file_path = format!("{}/{}.jpg", output_path, clean_name);
-
+    println!("{}",file_path);
     // 2. Téléchargement (Async HTTP)
     let bytes = reqwest::get(url).await?.bytes().await?;
     tokio::fs::write(&file_path, &bytes).await?;

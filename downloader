@@ -90,8 +90,9 @@ def download_single(url, name, base_path, artist="Unknown", album="Unknown"):
     # à la place de celles de YouTube (souvent moches).
     def metadata_hook(info, *, incomplete=False):
         if not incomplete:
-            info['artist'] = artist
-            info['album'] = album
+            pass
+            #info['artist'] = artist
+            #info['album'] = album
             # info['title'] = name # Décommenter pour forcer aussi le titre
         return None
 

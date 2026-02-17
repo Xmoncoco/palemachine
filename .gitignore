@@ -3,3 +3,6 @@
 /history_of_download.sqlite
 /venv
 /package
+/.idea
+/installation_scripts/docker.sh
+#yeah I always forgot how to setup a docker image
