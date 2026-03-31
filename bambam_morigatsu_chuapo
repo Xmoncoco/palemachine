@@ -21,11 +21,11 @@ for m4a in "$dir"/*.m4a; do
     ffmpeg -y -hide_banner -loglevel error \
       -i "$m4a" \
       -i "$jpg" \
-      -map 0:a      `# Garde uniquement l'audio du fichier m4a (vire la vieille vidéo)` \
+      -map 0:a      `# Garde uniquement l'audio du fichier m4a` \
       -map 1:0      `# Prend l'image JPG` \
-      -c:a copy     `# Copie l'audio sans réencoder (rapide)` \
-      -c:v copy     `# Copie l'image JPG` \
-      -disposition:v:0 attached_pic `# Force l'image à être une COVER (et pas une vidéo)` \
+      -c:a copy     `# Copie l'audio sans réencoder` \
+      -c:v mjpeg    `# FORCE LE VRAI FORMAT JPEG ICI` \
+      -disposition:v:0 attached_pic `# Force l'image à être une COVER` \
       "${m4a}.tmp.m4a"
 
     if [[ $? -eq 0 ]]; then

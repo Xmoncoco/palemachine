@@ -4,9 +4,9 @@ mkdir package
 cargo build --release --manifest-path $SCRIPT_DIR/../Cargo.toml --target-dir ./package
 cd package
 cp -r $SCRIPT_DIR/../{.version,bambam_morigatsu_chuapo,config.toml,pages,downloader,requirement.txt,update.sh} ./
-python3 -m venv venv 
+uv venv venv 
 source ./venv/bin/activate
-./venv/bin/pip install -r requirement.txt
+uv pip install -r requirement.txt
 deactivate
 cp ./release/palemachine ./palemachine
 rm -r ./release

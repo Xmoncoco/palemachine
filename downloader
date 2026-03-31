@@ -103,8 +103,9 @@ def download_single(url, name, base_path, artist="Unknown", album="Unknown"):
             ydl.download([url])
 
         # 5. RETOUR POUR RUST (CRITIQUE)
-        # On print le chemin absolu à la fin
-        print(output_dir)
+        # On print le chemin ABSOLU du fichier audio, pas juste le dossier
+        final_file_path = os.path.join(output_dir, f"{name}.m4a")
+        print(final_file_path)
         sys.stdout.flush()
 
     except Exception as e:

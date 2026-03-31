@@ -139,16 +139,22 @@
                 const data = await res.json();
 
                 if (Array.isArray(data) && data.length > 0) {
-                    // Affiche les résultats avec bouton de téléchargement pour chaque image
-                    resultDiv.innerHTML = data.map(item =>
-                        `<div>
-                            <strong>${item.music_name}</strong>
+                    // Côté Rust on renvoie Vec<(String, String)>, donc en JS c'est un tableau de tableaux : [ [titre, url], [titre, url] ]
+                    resultDiv.innerHTML = data.map(item => {
+                        const titre = item[0];
+                        const uri = item[1];
+                        
+                        // Sécurité pour ne pas casser le onclick avec les apostrophes dans les titres
+                        const safeTitre = titre.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                        
+                        return `<div>
+                            <strong>${titre}</strong>
                             <br>
-                            <img src="${item.uri}" alt="${item.music_name}">
+                            <img src="${uri}" alt="${titre}">
                             <br>
-                            <button class="dl-btn" onclick="triggerDownload('${yt_url}', '${item.music_name.replace(/'/g,"\\'")}', '${item.uri}')">Télécharger MP3</button>
-                        </div>`
-                    ).join("");
+                            <button class="dl-btn" onclick="triggerDownload('${yt_url}', '${safeTitre}', '${uri}')">Télécharger MP3</button>
+                        </div>`;
+                    }).join("");
                 } else {
                     resultDiv.innerHTML = "Aucun résultat trouvé.";
                 }

@@ -149,7 +149,7 @@ async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> i
         println!("Client IP: {}", peer_addr.ip());
         let ip = peer_addr.ip().to_string();
 
-        let result: Vec<download::SimpleSpotifyThumbnail> =
+        let result: Vec<(String,String)> =
             download::get_image(&query.yt_url, &query.friendlyname, &ip).await;
 
         return HttpResponse::Ok()

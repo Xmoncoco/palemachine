@@ -1,36 +1,12 @@
 use std::{ fs::{self} };
-use actix_web::http::header;
 use actix::Addr;
 use reqwest::Client;
 use chrono::Utc;
 use crate::{ db_link::{self, add_entry} ,WsMessage, PalemachineLobby};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use base64::{engine::general_purpose, Engine as _};
 use tokio::process::Command as TokioCommand; // Pour le script de permission
 use std::process::Command as StdCommand; // Pour le script Python (dans spawn_blocking)
 use toml;
-
-
-#[derive(Deserialize)]
-struct SpotifyToken {
-    access_token: String,
-    token_type: String,
-    expires_in: u64,
-}
-#[derive(Debug, Deserialize)]
-struct SpotifyThumbnail {
-    height: u32,
-    url: String,
-    width: u32,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SimpleSpotifyThumbnail{
-    music_name: String,
-    uri: String,
-}
-
 
 pub fn sanitise_name(name: &str) -> String {
     name.replace('/', "_")
@@ -46,7 +22,53 @@ fn get_python_command() -> &'static str {
     }
 }
 
-pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSpotifyThumbnail> {
+fn parser_json_yt(reponse: &str) -> Vec<(String, String)> {
+    let mut resultats = Vec::new();
+    
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(reponse) {
+        if let Some(sections) = parsed["contents"]["tabbedSearchResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]["sectionListRenderer"]["contents"].as_array() {
+            for section in sections {
+                // on vérifie que c'est bien la section musique (ça ignore le bouton "about these results")
+                if let Some(items) = section["musicShelfRenderer"]["contents"].as_array() {
+                    for item in items {
+                        let renderer = &item["musicResponsiveListItemRenderer"];
+                        
+                        let titre = renderer["flexColumns"][0]["musicResponsiveListItemFlexColumnRenderer"]["text"]["runs"][0]["text"]
+                            .as_str()
+                            .unwrap_or("inconnu")
+                            .to_string();
+
+                        // on chope la cover (la dernière du tableau)
+                        let mut url_image = if let Some(thumbnails) = renderer["thumbnail"]["musicThumbnailRenderer"]["thumbnail"]["thumbnails"].as_array() {
+                            thumbnails.last().and_then(|t| t["url"].as_str()).unwrap_or("").to_string()
+                        } else {
+                            String::new()
+                        };
+                        
+                        // FIX QUALITÉ MAXIMALE : on remplace les paramètres de taille de Google
+                        if let Some(index) = url_image.rfind('=') {
+                            // On garde tout avant le '=' et on force du 1080x1080 en JPEG de haute qualité
+                            url_image = format!("{}={}", &url_image[..index], "w1080-h1080-l90-rj");
+                        }
+                        
+                        // fix pour les url youtube relatives
+                        if url_image.starts_with("//") {
+                            url_image = format!("https:{}", url_image);
+                        }
+
+                        if !url_image.is_empty() {
+                            resultats.push((titre, url_image));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    resultats
+}
+
+pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<(String,String)> {
     let url = url.clone();
     let name = name.clone();
     let ip = ip.clone();
@@ -73,7 +95,7 @@ pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<SimpleSp
         }
 
         println!("No ID found in the URL");
-        Vec::<SimpleSpotifyThumbnail>::new()
+        Vec::<(String,String)>::new()
     }).await.unwrap()
 }
 
@@ -92,7 +114,7 @@ async fn process_single_video(
     url: &str,
     name: &str,
     ip: &str,
-) -> Vec<SimpleSpotifyThumbnail> {
+) -> Vec<(String,String)> {
     let query = format!(
         "https://www.googleapis.com/youtube/v3/videos?part=snippet&id={}&key={}",
         id, api_key
@@ -110,8 +132,7 @@ async fn process_single_video(
             };
             let _ = add_entry(entry);
 
-            let token = get_spotify_token().await;
-            return get_thumbnails(&token, &title, name).await;
+            return get_thumbnails(name).await;
         }
     } else {
         eprintln!("Failed to fetch video details from YouTube API");
@@ -125,7 +146,7 @@ async fn process_playlist(
     url: &str,
     name: &str,
     ip: &str,
-) -> Vec<SimpleSpotifyThumbnail> {
+) -> Vec<(String,String)> {
     let query = format!(
         "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId={}&key={}",
         playlist_id, api_key
@@ -151,8 +172,8 @@ async fn process_playlist(
                         .and_then(|s| s.get("title"))
                         .and_then(|t| t.as_str())
                     {
-                        let token = get_spotify_token().await;
-                        return get_thumbnails(&token, title, name).await;
+
+                        return get_thumbnails(title).await;
                     }
                 }
             }
@@ -213,106 +234,34 @@ fn get_title_from_json(json:&str) -> Option<String>{
     }
     None
 }
-// note sur ce code, je l'ai fait à 1h30 le lundi 21 juillet, j'ai besoin de sommeil mais pas grave c'est pas en dormant que je pourait implémenter ceci ok j'ai fait pire le 25 juillet où je code à 3h du matin
+// note sur ce code, je l'ai fait à 1h30 le lundi 21 juillet, j'ai besoin de sommeil mais pas grave c'est pas en dormant que je pourait implémenter ceci ok j'ai fait pire le 25 juillet où je code à 3h du matin, ok ce code la est parti le 31/03/2026 RIP
 
-pub async fn get_thumbnails(api_key: &str, title: &str, friendly_name: &str) -> Vec<SimpleSpotifyThumbnail> {
-    let baseurl = "https://api.spotify.com/v1/search?q=";
-    let list = [title  , friendly_name ]; //set as comment for testing purposes
-
-    let mut image_track_list: Vec<SimpleSpotifyThumbnail> = Vec::new();
-
-    for element in list {
-        // La ligne "let url = format!(...)" " a été supprimée
-
-        let mut headers = header::HeaderMap::new();
-        let auth_value = format!("Bearer {}", api_key);
-        headers.insert(header::AUTHORIZATION, auth_value.parse().unwrap());
-
-        let client = Client::new();
-
-        let response = client.get("https://api.spotify.com/v1/search")
-            .query(&[("q", element), ("type", "album")])
-            .headers(headers.into())
-            .send().await;
-        if let Ok(resp) = response {
-            if let Ok(text) = resp.text().await {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(items) = json.get("albums")
-                        .and_then(|t| t.get("items"))
-                        .and_then(|i| i.as_array())
-                    {
-                        for album in items {
-                            if let (Some(name), Some(image_list)) = (
-                                album.get("name").and_then(|n| n.as_str()),
-                                album.get("images").and_then(|i| i.as_array()),
-                            ) {
-                                if let Some(image_json) = image_list.get(0) {
-                                    if let Ok(image_serde) = serde_json::from_value::<SpotifyThumbnail>(image_json.clone()) {
-                                        if cfg!(debug_assertions){
-                                            println!("{}",image_serde.height);
-                                            println!("{}", image_serde.width);
-                                        }
-                                        let element = SimpleSpotifyThumbnail {
-                                            music_name: name.to_string(),
-                                            uri: image_serde.url,
-                                        };
-                                        image_track_list.push(element);
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        eprintln!("erreur de structure (j'ai envie de creuver)");
-                    }
-                } else {
-                    eprintln!("Erreur parsing JSON");
-                }
-            } else {
-                eprintln!("Erreur de lecture du body");
-            }
-        } else {
-            eprintln!("Erreur requête GET");
-        }
-    }
-
-    image_track_list
-}
-
-pub async fn get_spotify_token() -> String {
-    let client_id = std::env::var("SPOTIFY_CLIENT").unwrap_or_default();
-    let client_secret = std::env::var("SPOTIFY_SECRET").unwrap_or_default();
-    let baseurl = "https://accounts.spotify.com/api/token";
-
-    let creds = format!("{}:{}", client_id, client_secret);
-    let auth = format!("Basic {}", general_purpose::STANDARD.encode(creds));
-
-    let mut headers = header::HeaderMap::new();
-    headers.insert(header::AUTHORIZATION, auth.parse().unwrap());
-    headers.insert(header::CONTENT_TYPE, "application/x-www-form-urlencoded".parse().unwrap());
-
+async fn get_thumbnails(query: &str) -> Vec<(String, String)> {
+    // on utilise le Client asynchrone normal
     let client = Client::new();
-    let res = client
-        .post(baseurl)
-        .headers(headers.into())
-        .body("grant_type=client_credentials")
-        .send()
-        .await;
+    let url = "https://music.youtube.com/youtubei/v1/search";
 
-    let res =match res {
-        Ok(response) => response,
-        Err(e) => {
-            println!("Error sending request:{}", e);
-            return "".to_string();
-        }
+    let body = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240101.01.00"
+            }
+        },
+        "query": query,
+        "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+    });
+
+    // on rajoute les .await ici
+    let reponse = match client.post(url).json(&body).send().await {
+        Ok(res) => res.text().await.unwrap_or_default(),
+        Err(_) => return Vec::new(),
     };
 
-    let token : SpotifyToken=res.json().await.expect("Failed to parse response");
-    if cfg!(debug_assertions){
-        println!("{} {}",token.token_type,token.expires_in)
-    }
-
-    token.access_token
+    parser_json_yt(&reponse)
 }
+
+
 pub async fn send_download(
     url: &str,
     name: &str,
@@ -500,17 +449,6 @@ async fn download_image(url: &str, output_path: &String, name: &String) -> Resul
     // On utilise tokio::process::Command au lieu de std::process::Command
     // pour ne pas bloquer le serveur web pendant l'exécution du script bash
     println!("🔧 Lancement du script de permissions...");
-    let status = TokioCommand::new("./bambam_morigatsu_chuapo")
-        .arg(output_path)
-        .kill_on_drop(true) // Sécurité si la requête est annulée
-        .status()
-        .await?;
-
-    if !status.success() {
-        eprintln!("❌ Le script bambam a échoué avec le code: {:?}", status.code());
-    } else {
-        println!("✅ Permissions appliquées.");
-    }
 
     Ok(())
 }
