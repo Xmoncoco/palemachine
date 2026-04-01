@@ -55,7 +55,9 @@ fn parser_json_yt(reponse: &str) -> Vec<(String, String)> {
                         if url_image.starts_with("//") {
                             url_image = format!("https:{}", url_image);
                         }
-
+                        if url_image.ends_with("=w1080-h1080-l90-rj"){
+                            url_image = url_image.strip_suffix("=w1080-h1080-l90-rj").unwrap_or(&url_image).to_string();
+                        }
                         if !url_image.is_empty() {
                             resultats.push((titre, url_image));
                         }
