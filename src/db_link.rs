@@ -3,7 +3,6 @@ use rusqlite:: {params,Connection, Result};
 pub struct DbEntry{
     pub url : String,
     pub yt_id : String,
-    pub friendly_name : String,
     pub real_name : String,
     pub timestamp : String,
     pub ip : String,
@@ -16,7 +15,6 @@ pub fn init() -> Result<(), rusqlite::Error> {
         "CREATE TABLE IF NOT EXISTS entries (
             url TEXT,
             yt_id TEXT,
-            friendly_name TEXT,
             real_name TEXT,
             timestamp TEXT,
             ip TEXT
@@ -36,7 +34,6 @@ pub fn add_entry(entry:DbEntry) -> Result<(), rusqlite::Error> {
         params![
             entry.url,
             entry.yt_id,
-            entry.friendly_name,
             entry.real_name,
             entry.timestamp,
             entry.ip

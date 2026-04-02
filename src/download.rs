@@ -70,13 +70,12 @@ fn parser_json_yt(reponse: &str) -> Vec<(String, String)> {
     resultats
 }
 
-pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<(String,String)> {
+pub async fn get_image(url: &String,ip : &String) -> Vec<(String,String)> {
     let url = url.clone();
-    let name = name.clone();
     let ip = ip.clone();
 
     tokio::spawn(async move {
-        println!("c'est url {url}, et le nom {name}");
+        println!("c'est url {url}");
 
         let is_playlist = is_youtube_playlist(&url);
 
@@ -84,12 +83,12 @@ pub async fn get_image(url: &String, name: &String,ip : &String) -> Vec<(String,
             if is_playlist {
                 if let Some(id) = extract_param(&url, "list")  {
                     println!("a new image ask with the playlist ID: {}", id);
-                    return process_playlist(&id, &youtube_api_key, &url, &name, &ip).await;
+                    return process_playlist(&id, &youtube_api_key, &url, &ip).await;
                 }
             } else {
                 if let Some(id) = extract_param(&url, "v").or_else(|| extract_youtu_be_id(&url)) {
                     println!("a new image ask with the youtube ID: {}", id);
-                    return process_single_video(&id, &youtube_api_key, &url, &name, &ip).await;
+                    return process_single_video(&id, &youtube_api_key, &url, &ip).await;
                 }
             }
         } else {
@@ -114,7 +113,6 @@ async fn process_single_video(
     id: &str,
     api_key: &str,
     url: &str,
-    name: &str,
     ip: &str,
 ) -> Vec<(String,String)> {
     let query = format!(
@@ -127,14 +125,13 @@ async fn process_single_video(
             let entry = db_link::DbEntry {
                 url: url.to_string(),
                 yt_id: id.to_string(),
-                friendly_name: name.to_string(),
                 real_name: title.clone(),
                 timestamp: Utc::now().to_rfc3339(),
                 ip: ip.to_string(),
             };
             let _ = add_entry(entry);
-
-            return get_thumbnails(name).await;
+            println!("{}",title);
+            return get_thumbnails(&title);
         }
     } else {
         eprintln!("Failed to fetch video details from YouTube API");
@@ -146,7 +143,6 @@ async fn process_playlist(
     playlist_id: &str,
     api_key: &str,
     url: &str,
-    name: &str,
     ip: &str,
 ) -> Vec<(String,String)> {
     let query = format!(
@@ -156,15 +152,7 @@ async fn process_playlist(
 
     if let Some(body) = http_get(&query).await {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
-            let entry = db_link::DbEntry {
-                url: url.to_string(),
-                yt_id: playlist_id.to_string(),
-                friendly_name: name.to_string(),
-                real_name: format!("Playlist: {}", name),
-                timestamp: Utc::now().to_rfc3339(),
-                ip: ip.to_string(),
-            };
-            let _ = add_entry(entry);
+            
 
             // For playlists, return the first valid thumbnail
             if let Some(items) = json.get("items").and_then(|i| i.as_array()) {
@@ -174,8 +162,15 @@ async fn process_playlist(
                         .and_then(|s| s.get("title"))
                         .and_then(|t| t.as_str())
                     {
-
-                        return get_thumbnails(title).await;
+                        let entry = db_link::DbEntry {
+                            url: url.to_string(),
+                            yt_id: playlist_id.to_string(),
+                            real_name: format!("Playlist: {}", title),
+                            timestamp: Utc::now().to_rfc3339(),
+                            ip: ip.to_string(),
+                        };
+                        let _ = add_entry(entry);
+                        return get_thumbnails(title);
                     }
                 }
             }
@@ -238,9 +233,16 @@ fn get_title_from_json(json:&str) -> Option<String>{
 }
 // note sur ce code, je l'ai fait à 1h30 le lundi 21 juillet, j'ai besoin de sommeil mais pas grave c'est pas en dormant que je pourait implémenter ceci ok j'ai fait pire le 25 juillet où je code à 3h du matin, ok ce code la est parti le 31/03/2026 RIP
 
-async fn get_thumbnails(query: &str) -> Vec<(String, String)> {
-    // on utilise le Client asynchrone normal
-    let client = Client::new();
+// on enlève le mot-clé async car l'interface egui est synchrone
+fn get_thumbnails(query: &str) -> Vec<(String, String)> {
+    println!("Recherche album: {}", query);
+    
+    // 1. LE DÉGUISEMENT ANTI-BAN (avec le client blocking)
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .build()
+        .unwrap_or_default();
+        
     let url = "https://music.youtube.com/youtubei/v1/search";
 
     let body = json!({
@@ -251,18 +253,20 @@ async fn get_thumbnails(query: &str) -> Vec<(String, String)> {
             }
         },
         "query": query,
-        "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+        "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF" // le filtre magique pour les albums
     });
 
-    // on rajoute les .await ici
-    let reponse = match client.post(url).json(&body).send().await {
-        Ok(res) => res.text().await.unwrap_or_default(),
-        Err(_) => return Vec::new(),
+    // 2. ON VIRE LES .await ET ON UTILISE LE CLIENT BLOQUANT
+    let reponse = match client.post(url).json(&body).send() {
+        Ok(res) => res.text().unwrap_or_default(),
+        Err(e) => {
+            eprintln!("Erreur reqwest: {}", e);
+            return Vec::new()
+        },
     };
-
+    
     parser_json_yt(&reponse)
 }
-
 
 pub async fn send_download(
     url: &str,

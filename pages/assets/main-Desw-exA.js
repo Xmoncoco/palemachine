@@ -1,0 +1,1 @@
+import"./style-ChNEhWRl.js";var e=document.getElementById(`search-btn`),t=document.getElementById(`yt-url-input`),n=()=>{t.value.trim()!==``&&(window.location.href=`/data.html?url=${encodeURIComponent(t.value)}`)};e?.addEventListener(`click`,n),t?.addEventListener(`keypress`,e=>{e.key===`Enter`&&n()});

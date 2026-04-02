@@ -1,5 +1,6 @@
 use std::{fs};
 use actix_web::{ web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_files::Files;
 use serde::Deserialize;
 
 use dotenvy::dotenv;
@@ -84,7 +85,7 @@ async fn root(req : HttpRequest) -> impl Responder{
     if let Some(peer_addr) = req.peer_addr() {
         println!("Client IP: {}", peer_addr.ip());
     }
-    let html = fs::read_to_string("pages/root.html").unwrap_or_else(|_| {
+    let html = fs::read_to_string("pages/index.html").unwrap_or_else(|_| {
         "<h1>Failed to read index.html restart your server</h1>".to_string()
     });
 
@@ -97,7 +98,6 @@ async fn root(req : HttpRequest) -> impl Responder{
 #[derive(Deserialize)]
 struct ImageQuestion {
     yt_url: String,
-    friendlyname: String,
 }
 
 
@@ -143,26 +143,24 @@ async fn download(
     HttpResponse::InternalServerError().body("Erreur de récupération d'IP")
 }
 
+async fn image_question(query: web::Query<ImageQuestion>, req: HttpRequest) -> impl Responder {
+    // On récupère l'IP mais on ne bloque pas si elle est absente
+    let ip = req.peer_addr()
+        .map(|addr| addr.ip().to_string())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
-async fn image_question(req: HttpRequest, query: web::Query<ImageQuestion>) -> impl Responder {
-    if let Some(peer_addr) = req.peer_addr() {
-        println!("Client IP: {}", peer_addr.ip());
-        let ip = peer_addr.ip().to_string();
+    println!("🔍 Requête images pour : {} (IP: {})", query.yt_url, ip);
 
-        let result: Vec<(String,String)> =
-            download::get_image(&query.yt_url, &query.friendlyname, &ip).await;
+    // On appelle ta logique dans download.rs
+    let result = download::get_image(&query.yt_url, &ip).await;
+    
+    println!("📊 Nombre de résultats : {}", result.len());
 
-        return HttpResponse::Ok()
-            .content_type("application/json")
-            .json(result); 
-    }
-
-    let html = fs::read_to_string("pages/imageQuestion.html").unwrap_or_else(|_| {
-        "<h1>Failed to read imageQuestion.html restart your server</h1>".to_string()
-    });
-    HttpResponse::Ok().body(html)
+    // On renvoie TOUJOURS du JSON, même si le tableau est vide []
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .json(result)
 }
-
 async fn get_version() -> Result<String, reqwest::Error> {
     let githubversion = reqwest::get("https://raw.githubusercontent.com/Xmoncoco/palemachine/refs/heads/master/.version").await?;
     let version = githubversion.text().await?;
@@ -216,13 +214,24 @@ async fn main() -> std::io::Result<()>{
     println!("path: {}", path);
     println!("the server has started at http://127.0.0.1:{}",port);    
     HttpServer::new(move ||
-        App::new()
-            .app_data(lobby_data.clone())
-            .route("/", web::get().to(root))
-            .route("/imagequestion", web::get().to(image_question))
-            .route("/downlad",web::get().to(download))
-            .route("/ws", web::get().to(ws_index))
-    )
+    App::new()
+        .app_data(lobby_data.clone())
+        // Tes routes API
+        .route("/", web::get().to(root))
+        .route("/imagequestion", web::get().to(image_question))
+        .route("/downlad", web::get().to(download))
+        .route("/ws", web::get().to(ws_index))
+        
+        // --- LE FIX POUR TES ASSETS ---
+        // On monte le dossier "pages/assets" sur l'URL "/assets"
+        .service(Files::new("/assets", "pages/assets").show_files_listing())
+        
+        // Route pour la page data si tu ne l'as pas déjà
+        .route("/data.html", web::get().to(|_req: HttpRequest| async {
+            let html = fs::read_to_string("pages/data.html").unwrap_or_else(|_| "Error".to_string());
+            HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
+        }))
+)
     .bind(("0.0.0.0",port))?
     .run()
     .await
