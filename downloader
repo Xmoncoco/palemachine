@@ -1,5 +1,29 @@
-import yt_dlp
+import subprocess
 import sys
+import importlib.util
+
+def check_and_update_ytdlp():
+    """Vérifie et met à jour yt-dlp silencieusement au lancement."""
+    print("Vérification des dépendances critiques (yt-dlp)...")
+    try:
+        # On lance la commande de mise à jour
+        # --no-input garantit que le script ne reste pas bloqué
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            "--upgrade", "yt-dlp", "--no-input", "--quiet"
+        ])
+
+        # Important : recharger le module si déjà importé
+        if 'yt_dlp' in sys.modules:
+            importlib.reload(sys.modules['yt_dlp'])
+
+        print("yt-dlp est à jour.")
+    except Exception as e:
+        print(f"Impossible de mettre à jour yt-dlp : {e}")
+
+# Appel de la fonction AVANT le reste du code
+check_and_update_ytdlp()
+import yt_dlp
 import os
 from yt_dlp.utils import sanitize_filename
 
